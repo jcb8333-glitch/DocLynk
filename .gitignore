@@ -70,6 +70,7 @@ Testing/
 
 # Testing
 test.*
+config.h
 
 # Environments
 .env
