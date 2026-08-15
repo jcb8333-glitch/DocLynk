@@ -86,4 +86,9 @@ class Node{
     public:
         Node(){}
 
+        int startNode(){
+            std::thread servThread(serv_sock);
+            std::thread cliThread(cli_sock);
+        }
+
 };
