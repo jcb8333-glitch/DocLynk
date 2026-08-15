@@ -6,6 +6,9 @@
 #include <arpa/inet.h>
 #include <unistd.h>
 
+#include <string>
+#include "config.h"
+
 class Node{
     private:
         int serv_sock(){
@@ -42,6 +45,8 @@ class Node{
                 }
 
                 // Connection logic
+                std::string msg = "Hello world!\n";
+                send(connfd, msg.c_str(), msg.size(), 0);
 
                 if(shutdown(connfd, SHUT_RDWR) == -1){
                     fprintf(stderr, "Failed to shutdown server connection\n");
@@ -65,7 +70,7 @@ class Node{
                 .sin_family = AF_INET,
                 .sin_port = htons(8570)
             };
-            int res = inet_pton(AF_INET, /*TEST IP*/, &socketAddress.sin_addr);
+            int res = inet_pton(AF_INET, TEST_IP, &socketAddress.sin_addr);
 
             if(connect(sockfd, (struct sockaddr*)&socketAddress, sizeof(socketAddress)) == -1){
                 fprintf(stderr, "Client failed to establish connection\n");
