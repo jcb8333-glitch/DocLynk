@@ -11,27 +11,29 @@
 
 class Node{
     private:
+        std::thread servThread;
+        std::thread cliThread;
+
         int serv_sock(){
             int sockfd = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
-            if(sockfd == -1){
-                fprintf(stderr, "Failed to create server socket\n");
+            if(sockfd < 0){
+                perror("Failed to create server socket");
                 return EXIT_FAILURE;
             }
 
-            struct sockaddr_in socketAddress = {
-                .sin_family  = AF_INET, // Address family
-                .sin_port = htons(8570), // Port number
-                .sin_addr.s_addr = htonl(INADDR_ANY) // Socket address (0.0.0.0, Any IPv4 address can connect)
-            };
+            struct sockaddr_in socketAddress;
+            socketAddress.sin_family  = AF_INET; // Address family
+            socketAddress.sin_port = htons(8570); // Port number
+            socketAddress.sin_addr.s_addr = htonl(INADDR_ANY); // Socket address (0.0.0.0, Any IPv4 address can connect)
 
-            if(bind(sockfd, (struct sockaddr*)&socketAddress, sizeof(socketAddress)) == -1){
-                fprintf(stderr, "Failed to bind server socket to address\n");
+            if(bind(sockfd, (struct sockaddr*)&socketAddress, sizeof(socketAddress)) < 0){
+                perror("Failed to bind server socket to address");
                 close(sockfd);
                 return EXIT_FAILURE;
             }
 
-            if(listen(sockfd, 16) == -1){
-                fprintf(stderr, "Server socket failed to listen\n");
+            if(listen(sockfd, 16) < 0){
+                perror("Server socket failed to listen");
                 close(sockfd);
                 return EXIT_FAILURE;
             }
@@ -39,7 +41,7 @@ class Node{
             while (true){
                 int connfd = accept(sockfd, NULL, NULL);
                 if (connfd == -1){
-                    fprintf(stderr, "Connection refused on server socket\n");
+                    perror("Connection refused on server socket");
                     close(sockfd);
                     return EXIT_FAILURE;
                 }
@@ -49,46 +51,69 @@ class Node{
                 send(connfd, msg.c_str(), msg.size(), 0);
 
                 if(shutdown(connfd, SHUT_RDWR) == -1){
-                    fprintf(stderr, "Failed to shutdown server connection\n");
+                    perror("Failed to shutdown server connection");
                     close(sockfd);
                     close(connfd);
                     return EXIT_FAILURE;
                 }
                 close(connfd);
             }
-            close(sockfd);
         }
 
         int cli_sock(){
             int sockfd = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
-            if (sockfd == -1){
-                fprintf(stderr, "Failed to create client socket\n");
+            if (sockfd < 0){
+                perror("Failed to create client socket");
                 return EXIT_FAILURE;
             }
 
-            struct sockaddr_in socketAddress {
-                .sin_family = AF_INET,
-                .sin_port = htons(8570)
-            };
+            struct sockaddr_in socketAddress;
+            socketAddress.sin_family = AF_INET;
+            socketAddress.sin_port = htons(8570);
+
             int res = inet_pton(AF_INET, TEST_IP, &socketAddress.sin_addr);
 
-            if(connect(sockfd, (struct sockaddr*)&socketAddress, sizeof(socketAddress)) == -1){
-                fprintf(stderr, "Client failed to establish connection\n");
+            if(connect(sockfd, (struct sockaddr*)&socketAddress, sizeof(socketAddress)) < 0){
+                perror("Client failed to establish connection");
                 close(sockfd);
                 return EXIT_FAILURE;
             }
 
             // Connection logic
+            char buffer[1024] = {0};
+
+            ssize_t bytes_recv = recv(sockfd, buffer, sizeof(buffer), 0);
+            if(bytes_recv < 0){
+                perror("Client socket failed to receive data");
+                close(sockfd);
+                return EXIT_FAILURE;
+            } 
+            else {
+                buffer[bytes_recv] = '\0';
+                printf(buffer);
+            }
 
             close(sockfd);
             return EXIT_SUCCESS;
         }
     public:
-        Node(){}
-
-        int startNode(){
-            std::thread servThread(serv_sock);
-            std::thread cliThread(cli_sock);
+        Node(){
+            servThread = std::thread(&Node::serv_sock, this);
+            cliThread = std::thread(&Node::cli_sock, this);
+            std::this_thread::sleep_for(std::chrono::seconds(1));
         }
 
+        void joinAll(){
+            if (servThread.joinable()) servThread.join();
+            if (cliThread.joinable()) cliThread.join();
+        }
+
+        ~Node(){
+            joinAll();
+        }
 };
+
+int main(){
+    Node node1;
+    node1.joinAll();
+}
