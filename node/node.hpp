@@ -1,3 +1,5 @@
+#pragma once
+
 #include <cstdio>
 #include <cstdlib>
 #include <thread>
@@ -7,7 +9,13 @@
 #include <unistd.h>
 
 #include <string>
+#include <vector>
 #include "config.h"
+
+struct neighbors {
+    Node target;
+    uint32_t weight;
+};
 
 class Node{
     private:
@@ -96,7 +104,14 @@ class Node{
             close(sockfd);
             return EXIT_SUCCESS;
         }
+
+        std::string getSelfAddr(){}
+
     public:
+
+        std::string addr_ = TEST_IP;    
+        std::vector<neighbors> connections;
+
         Node(){
             servThread = std::thread(&Node::serv_sock, this);
             cliThread = std::thread(&Node::cli_sock, this);
@@ -112,8 +127,3 @@ class Node{
             joinAll();
         }
 };
-
-int main(){
-    Node node1;
-    node1.joinAll();
-}
