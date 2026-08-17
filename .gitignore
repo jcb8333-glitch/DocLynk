@@ -75,3 +75,15 @@ config.h
 # Environments
 .env
 .env*
+
+# Builds
+*.o
+*.obj
+*.a
+*.lib
+*.so
+*.dylib
+*.dll
+*.exe
+*.out
+*.app
