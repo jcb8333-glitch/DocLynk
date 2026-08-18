@@ -87,3 +87,6 @@ config.h
 *.exe
 *.out
 *.app
+
+# vscode
+.vscode
