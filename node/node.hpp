@@ -12,10 +12,6 @@
 #include <vector>
 #include "config.h"
 
-struct neighbors {
-    Node target;
-    uint32_t weight;
-};
 
 class Node{
     private:
@@ -55,8 +51,18 @@ class Node{
                 }
 
                 // Connection logic
-                std::string msg = "Hello world!\n";
-                send(connfd, msg.c_str(), msg.size(), 0);
+                char buffer[1024] = {0};
+
+                ssize_t bytes_recv = recv(connfd, buffer, sizeof(buffer), 0);
+                if(bytes_recv < 0){
+                    perror("Server socket failed to receive new node connection");
+                    close(connfd);
+                    return EXIT_FAILURE;
+                } 
+                else {
+                    buffer[bytes_recv] = '\0';
+                    printf(buffer);
+                }
 
                 if(shutdown(connfd, SHUT_RDWR) == -1){
                     perror("Failed to shutdown server connection");
@@ -90,27 +96,17 @@ class Node{
             // Connection logic
             char buffer[1024] = {0};
 
-            ssize_t bytes_recv = recv(sockfd, buffer, sizeof(buffer), 0);
-            if(bytes_recv < 0){
-                perror("Client socket failed to receive data");
-                close(sockfd);
-                return EXIT_FAILURE;
-            } 
-            else {
-                buffer[bytes_recv] = '\0';
-                printf(buffer);
-            }
+            std::string msg = "Hello World!\n";
+            send(sockfd, msg.c_str(), msg.size(), 0);
 
             close(sockfd);
             return EXIT_SUCCESS;
         }
 
-        std::string getSelfAddr(){}
-
     public:
 
         std::string addr_ = TEST_IP;    
-        std::vector<neighbors> connections;
+        // std::vector<neighbors> connections;
 
         Node(){
             servThread = std::thread(&Node::serv_sock, this);
@@ -126,4 +122,9 @@ class Node{
         ~Node(){
             joinAll();
         }
+};
+
+struct neighbors {
+    Node target;
+    uint32_t weight;
 };
