@@ -1,5 +1,5 @@
 #pragma once
-
+// Posix socket programming
 #include <cstdio>
 #include <cstdlib>
 #include <thread>
@@ -7,23 +7,26 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <unistd.h>
-
+// Serialization
+#include <cereal/archives/binary.hpp>
+// General imports
 #include <string>
 #include <vector>
 #include "config.h"
 
-#include <cereal/archives/binary.hpp>
-
+// Store data on adjacent nodes in network
 struct neighbors {
     Node target;
     uint32_t weight;
 };
 
+// Contains network logic and data on a node
 class Node{
     private:
         std::thread servThread;
         std::thread cliThread;
 
+        // Server function to be executed by thread to accept connections
         int serv_sock(){
             int sockfd = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
             if(sockfd < 0){
@@ -70,6 +73,7 @@ class Node{
             }
         }
 
+        // Client function to be executed by a thread to connect to other nodes
         int cli_sock(){
             int sockfd = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
             if (sockfd < 0){
@@ -114,17 +118,20 @@ class Node{
         std::string addr_ = TEST_IP;    
         std::vector<neighbors> connections;
 
+        // Constructor: Start server and client threads on construction
         Node(){
             servThread = std::thread(&Node::serv_sock, this);
             cliThread = std::thread(&Node::cli_sock, this);
             std::this_thread::sleep_for(std::chrono::seconds(1));
         }
 
+        // End execution of both threads
         void joinAll(){
             if (servThread.joinable()) servThread.join();
             if (cliThread.joinable()) cliThread.join();
         }
 
+        // Destructor: Ends threads when node is destructed
         ~Node(){
             joinAll();
         }

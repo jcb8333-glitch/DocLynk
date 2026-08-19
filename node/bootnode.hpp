@@ -2,6 +2,7 @@
 
 #include "node.hpp"
 
+// Bootnode for initial node connection
 class BootNode : public Node {
     private:
         std::vector<Node> nodes;
