@@ -12,6 +12,8 @@
 #include <vector>
 #include "config.h"
 
+#include <cereal/archives/binary.hpp>
+
 struct neighbors {
     Node target;
     uint32_t weight;
