@@ -9,7 +9,7 @@
 #include <unistd.h>
 // Serialization
 #include <cereal/archives/binary.hpp>
-#include <fstream>
+#include <sstream>
 // General imports
 #include <string>
 #include <vector>
@@ -31,6 +31,21 @@ class Node{
     private:
         std::thread servThread;
         std::thread cliThread;
+
+        // Send data on self over connection for network discovery
+        int sendNode(int sockfd, Node& node){
+            std::stringstream ss;
+            {
+                cereal::BinaryOutputArchive archive(ss);
+                archive(node);
+            }
+            std::string payload = ss.str();
+            uint32_t len = htonl(static_cast<uint32_t>(payload.size()));
+            if (send(sockfd, &len, sizeof(len), 0) != sizeof(len)) return -1;
+            if (send(sockfd, payload.data(), payload.size(), 0) != (ssize_t)payload.size()) return -2;
+            return 0;
+
+        }
 
         // Server function to be executed by thread to accept connections
         int serv_sock(){
