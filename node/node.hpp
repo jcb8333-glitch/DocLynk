@@ -44,7 +44,18 @@ class Node{
             if (send(sockfd, &len, sizeof(len), 0) != sizeof(len)) return -1;
             if (send(sockfd, payload.data(), payload.size(), 0) != (ssize_t)payload.size()) return -2;
             return 0;
-
+        }
+        // Receive serialized node
+        int recvNode(int sockfd, Node& node){
+            uint32_t len;
+            if(recv(sockfd, &len, sizeof(len), MSG_WAITALL) != sizeof(len)) return -1;
+            len = ntohl(len);
+            std::string payload(len, '\0');
+            if (recv(sockfd, payload.data(), len, MSG_WAITALL) != (ssize_t)len) return -2;
+            std::stringstream ss(payload);
+            cereal::BinaryInputArchive archive(ss);
+            archive(node);
+            return 0;
         }
 
         // Server function to be executed by thread to accept connections
