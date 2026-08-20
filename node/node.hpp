@@ -9,15 +9,21 @@
 #include <unistd.h>
 // Serialization
 #include <cereal/archives/binary.hpp>
+#include <fstream>
 // General imports
 #include <string>
 #include <vector>
 #include "config.h"
 
 // Store data on adjacent nodes in network
-struct neighbors {
+struct neighbor {
     Node target;
     uint32_t weight;
+
+    template <class Archive>
+    void serialize(Archive& ar){
+        ar(target, weight);
+    }
 };
 
 // Contains network logic and data on a node
@@ -111,12 +117,19 @@ class Node{
             return EXIT_SUCCESS;
         }
 
+        friend class cereal::access;
+        template<class Archive>
+        void serialize(Archive& ar){
+            ar(addr_, connections);
+        }
+
+
         std::string getSelfAddr(){}
 
     public:
 
         std::string addr_ = TEST_IP;    
-        std::vector<neighbors> connections;
+        std::vector<neighbor> connections;
 
         // Constructor: Start server and client threads on construction
         Node(){
