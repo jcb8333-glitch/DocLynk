@@ -9,6 +9,8 @@
 #include <unistd.h>
 // Serialization
 #include <cereal/archives/binary.hpp>
+#include <cereal/types/string.hpp>
+#include <cereal/types/vector.hpp>
 #include <sstream>
 // General imports
 #include <string>
@@ -17,12 +19,12 @@
 
 // Store data on adjacent nodes in network
 struct neighbor {
-    Node target;
+    std::string target_addr;
     uint32_t weight;
 
     template <class Archive>
     void serialize(Archive& ar){
-        ar(target, weight);
+        ar(target_addr, weight);
     }
 };
 
@@ -92,8 +94,13 @@ class Node{
                 }
 
                 // Connection logic
-                std::string msg = "Hello world!\n";
-                send(connfd, msg.c_str(), msg.size(), 0);
+                if(recvNode(connfd, incoming) < 0){
+                    perror("Server thread failed to receive serialized node");
+                    return EXIT_FAILURE;
+                } else {
+                    printf(incoming.secret.c_str());
+                }
+
 
                 if(shutdown(connfd, SHUT_RDWR) == -1){
                     perror("Failed to shutdown server connection");
@@ -128,33 +135,22 @@ class Node{
             // Connection logic
             char buffer[1024] = {0};
 
-            ssize_t bytes_recv = recv(sockfd, buffer, sizeof(buffer), 0);
-            if(bytes_recv < 0){
-                perror("Client socket failed to receive data");
+            if(sendNode(sockfd, *this) < 0){
+                perror("Client thread failed to serialize node");
                 close(sockfd);
                 return EXIT_FAILURE;
-            } 
-            else {
-                buffer[bytes_recv] = '\0';
-                printf(buffer);
             }
 
             close(sockfd);
             return EXIT_SUCCESS;
         }
 
-        friend class cereal::access;
-        template<class Archive>
-        void serialize(Archive& ar){
-            ar(addr_, connections);
-        }
-
-
-        std::string getSelfAddr(){}
+        // std::string getSelfAddr(){}
 
     public:
 
-        std::string addr_ = TEST_IP;    
+        std::string addr_ = TEST_IP;  
+        std::string secret = "Im trapped in a for loop";  
         std::vector<neighbor> connections;
 
         // Constructor: Start server and client threads on construction
@@ -168,6 +164,12 @@ class Node{
         void joinAll(){
             if (servThread.joinable()) servThread.join();
             if (cliThread.joinable()) cliThread.join();
+        }
+
+        friend class cereal::access;
+        template<class Archive>
+        void serialize(Archive& ar){
+            ar(addr_, connections, secret);
         }
 
         // Destructor: Ends threads when node is destructed
