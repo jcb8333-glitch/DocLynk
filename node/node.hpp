@@ -16,7 +16,6 @@
 #include <string>
 #include <vector>
 #include "config.h"
-
 // Debugging
 #include <iostream>
 
@@ -189,9 +188,4 @@ class Node{
         ~Node(){
             joinAll();
         }
-};
-
-struct neighbors {
-    Node target;
-    uint32_t weight;
 };
