@@ -17,6 +17,9 @@
 #include <vector>
 #include "config.h"
 
+// Debugging
+#include <iostream>
+
 // Store data on adjacent nodes in network
 struct neighbor {
     std::string target_addr;
@@ -27,15 +30,30 @@ struct neighbor {
         ar(target_addr, weight);
     }
 };
+struct nInf{
+            std::string addr;
+            std::string secret;
+            std::vector<neighbor> connections;
+
+            template <class Archive>
+            void serialize(Archive& ar){
+                ar(addr, secret, connections);
+            }
+        };
 
 // Contains network logic and data on a node
 class Node{
     private:
+        std::string addr_ = TEST_IP;
         std::thread servThread;
         std::thread cliThread;
+        std::string secret_ = "Im trapped in a for loop";  
+        std::vector<neighbor> connections_;
+        // Struct for serialization
+        struct nInf nodeInfo;
 
         // Send data on self over connection for network discovery
-        int sendNode(int sockfd, Node& node){
+        int sendNode(int sockfd, nInf& node){
             std::stringstream ss;
             {
                 cereal::BinaryOutputArchive archive(ss);
@@ -48,7 +66,7 @@ class Node{
             return 0;
         }
         // Receive serialized node
-        int recvNode(int sockfd, Node& node){
+        int recvNode(int sockfd, nInf& node){
             uint32_t len;
             if(recv(sockfd, &len, sizeof(len), MSG_WAITALL) != sizeof(len)) return -1;
             len = ntohl(len);
@@ -94,11 +112,12 @@ class Node{
                 }
 
                 // Connection logic
+                nInf incoming;
                 if(recvNode(connfd, incoming) < 0){
                     perror("Server thread failed to receive serialized node");
                     return EXIT_FAILURE;
                 } else {
-                    printf(incoming.secret.c_str());
+                    std::cout << incoming.secret << std::endl;
                 }
 
 
@@ -135,7 +154,7 @@ class Node{
             // Connection logic
             char buffer[1024] = {0};
 
-            if(sendNode(sockfd, *this) < 0){
+            if(sendNode(sockfd, nodeInfo) < 0){
                 perror("Client thread failed to serialize node");
                 close(sockfd);
                 return EXIT_FAILURE;
@@ -149,12 +168,11 @@ class Node{
 
     public:
 
-        std::string addr_ = TEST_IP;  
-        std::string secret = "Im trapped in a for loop";  
-        std::vector<neighbor> connections;
-
         // Constructor: Start server and client threads on construction
         Node(){
+            nodeInfo.addr = addr_;
+            nodeInfo.secret = secret_;
+            nodeInfo.connections = connections_;
             servThread = std::thread(&Node::serv_sock, this);
             cliThread = std::thread(&Node::cli_sock, this);
             std::this_thread::sleep_for(std::chrono::seconds(1));
@@ -166,11 +184,6 @@ class Node{
             if (cliThread.joinable()) cliThread.join();
         }
 
-        friend class cereal::access;
-        template<class Archive>
-        void serialize(Archive& ar){
-            ar(addr_, connections, secret);
-        }
 
         // Destructor: Ends threads when node is destructed
         ~Node(){
