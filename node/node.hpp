@@ -96,16 +96,19 @@ class Node{
             // Connection logic
             char buffer[1024] = {0};
 
-            std::string msg = "Hello World!\n";
-            send(sockfd, msg.c_str(), msg.size(), 0);
+            send(sockfd, this, sizeof(this), 0);
 
             close(sockfd);
             return EXIT_SUCCESS;
         }
 
+        // Work in progress method
+        static void serialize(Node& node){}
+
     public:
 
-        std::string addr_ = TEST_IP;    
+        std::string addr_ = TEST_IP;
+        std::string message = "Hello from Node!\n";    
         // std::vector<neighbors> connections;
 
         Node(){
