@@ -2,6 +2,7 @@
 // Posix socket programming
 #include <cstdio>
 #include <cstdlib>
+#include <future>
 #include <thread>
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -14,6 +15,7 @@
 #include <sstream>
 // General imports
 #include <string>
+
 #include <vector>
 #include "config.h"
 // Debugging
@@ -44,6 +46,8 @@ struct nInf{
 class Node{
     private:
         std::string addr_ = TEST_IP;
+        std::promise<void> sReady_;
+        std::shared_future<void> sReadyFuture_;
         std::thread servThread;
         std::thread cliThread;
         std::string secret_ = "Im trapped in a for loop";  
@@ -82,6 +86,7 @@ class Node{
             int sockfd = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
             if(sockfd < 0){
                 perror("Failed to create server socket");
+                sReady_.set_value();
                 return EXIT_FAILURE;
             }
 
@@ -93,14 +98,18 @@ class Node{
             if(bind(sockfd, (struct sockaddr*)&socketAddress, sizeof(socketAddress)) < 0){
                 perror("Failed to bind server socket to address");
                 close(sockfd);
+                sReady_.set_value();
                 return EXIT_FAILURE;
             }
 
             if(listen(sockfd, 16) < 0){
                 perror("Server socket failed to listen");
                 close(sockfd);
+                sReady_.set_value();
                 return EXIT_FAILURE;
             }
+
+            sReady_.set_value();
 
             while (true){
                 int connfd = accept(sockfd, NULL, NULL);
@@ -132,6 +141,7 @@ class Node{
 
         // Client function to be executed by a thread to connect to other nodes
         int cli_sock(){
+            sReadyFuture_.wait();
             int sockfd = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
             if (sockfd < 0){
                 perror("Failed to create client socket");
@@ -172,9 +182,9 @@ class Node{
             nodeInfo.addr = addr_;
             nodeInfo.secret = secret_;
             nodeInfo.connections = connections_;
+            sReadyFuture_ = sReady_.get_future();
             servThread = std::thread(&Node::serv_sock, this);
             cliThread = std::thread(&Node::cli_sock, this);
-            std::this_thread::sleep_for(std::chrono::seconds(1));
         }
 
         // End execution of both threads
