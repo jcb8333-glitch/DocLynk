@@ -5,7 +5,7 @@
 // Bootnode for initial node connection
 class BootNode : public Node {
     private:
-        std::vector<Node> nodes;
+        std::vector<nInf> nodes;
 
         uint32_t calculateWeight(uint64_t ifBps, uint64_t rfBps = 100000000ULL){
             if (ifBps == 0)return 65535;
