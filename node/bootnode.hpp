@@ -1,11 +1,27 @@
 #pragma once
 
 #include "node.hpp"
+#include <mutex>
 
 // Bootnode for initial node connection
 class BootNode : public Node {
     private:
-        std::vector<nInf> nodes;
+        std::vector<nInf> registry;
+        std::mutex registryMutex;
+
+        void registerNode(int connfd){
+            nInf incoming;
+            if(recvNode(connfd, incoming) < 0){
+                perror("Boot failed to receive node");
+                return;
+            }
+
+            //std::vector<neighbor> 
+            {
+                std::lock_guard<std::mutex> lock(registryMutex);
+                registry.push_back(incoming);
+            }
+        }
 
         uint32_t calculateWeight(uint64_t ifBps, uint64_t rfBps = 100000000ULL){
             if (ifBps == 0)return 65535;
