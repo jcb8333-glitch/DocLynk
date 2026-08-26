@@ -5,6 +5,10 @@
 	"features": {
 		"ghcr.io/devcontainers/features/python:1": {
 			"version": "3.12"
+		},
+		"ghcr.io/devcontainers/features/docker-outside-of-docker:1": {
+			"version": "latest",
+			"moby": false
 		}
 	},
 
@@ -19,7 +23,8 @@
 			"extensions": [
 				"ms-vscode.cpptools",
 				"ms-vscode.cmake-tools",
-				"ms-python.python"
+				"ms-python.python",
+				"ms-azuretools.vscode-docker"
 			]
 		}
 	}
