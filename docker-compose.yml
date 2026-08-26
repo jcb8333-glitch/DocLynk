@@ -1,0 +1,27 @@
+services:
+  bootnode:
+    build: .
+    command: ./bootnode
+    networks:
+      testnet:
+        ipv4_address: 172.28.0.10
+
+  node1:
+    build: .
+    command: ./node --connect 172.28.0.10
+    networks:
+      testnet:
+        ipv4_address: 172.28.0.11
+
+  node2:
+  build: .
+  command: ./node --connect 172.28.0.10
+  networks:
+    testnet:
+      ipv4_address: 172.28.0.12
+
+networks:
+  testnet:
+    ipam:
+      config:
+        - subnet: 172.28.0.0/24
