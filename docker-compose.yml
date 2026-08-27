@@ -1,27 +1,32 @@
 services:
   bootnode:
     build: .
-    command: ./bootnode
+    entrypoint: ["/usr/local/bin/bootnode"]
     networks:
       testnet:
         ipv4_address: 172.28.0.10
 
   node1:
     build: .
-    command: ./node --connect 172.28.0.10
+    entrypoint: ["/usr/local/bin/node", "--self", "172.28.0.11", "--boot", "172.28.0.10"]
     networks:
       testnet:
         ipv4_address: 172.28.0.11
+    depends_on:
+      - bootnode
 
   node2:
     build: .
-    command: ./node --connect 172.28.0.10
+    entrypoint: ["/usr/local/bin/node", "--self", "172.28.0.12", "--boot", "172.28.0.10"]
     networks:
       testnet:
         ipv4_address: 172.28.0.12
+    depends_on:
+      - bootnode
 
 networks:
   testnet:
+    driver: bridge
     ipam:
       config:
         - subnet: 172.28.0.0/24
