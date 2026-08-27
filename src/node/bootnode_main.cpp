@@ -1,6 +1,7 @@
 #include "bootnode.hpp"
 
 int main(){
-    BootNode boot;
+    const char* selfAddr = "";
+    BootNode boot(selfAddr);
     boot.joinAll();
 }

@@ -46,7 +46,8 @@ struct nInf{
 class Node{
     private:
         uint32_t nodeID = 111;
-        std::string addr_ = TEST_IP;
+        const char* addr_;
+        const char* bootAddr_;
         std::promise<void> sReady_;
         std::shared_future<void> sReadyFuture_;
         std::thread servThread;
@@ -182,13 +183,15 @@ class Node{
     public:
 
         // Constructor: Start server and client threads on construction
-        Node(){
+        Node(const char* selfAddr, const char* bootAddr)
+            : addr_(std::move(selfAddr)), bootAddr_(std::move(bootAddr))
+        {
             nodeInfo.addr = addr_;
             nodeInfo.secret = secret_;
             nodeInfo.connections = connections_;
             sReadyFuture_ = sReady_.get_future();
             servThread = std::thread(&Node::serv_sock, this);
-            cliThread = std::thread(&Node::cli_sock, this, TEST_IP);
+            cliThread = std::thread(&Node::cli_sock, this, bootAddr_);
         }
 
         // End execution of both threads

@@ -1,6 +1,8 @@
 #include "node.hpp"
 
 int main(){
-    Node node;
+    const char* selfAddr = "";
+    const char* bootAddr = "";
+    Node node(selfAddr, bootAddr);
     node.joinAll();
 }

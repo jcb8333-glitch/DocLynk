@@ -32,5 +32,5 @@ class BootNode : public Node {
         }
 
     public:
-        BootNode() : Node(){}
+        BootNode(const char* selfAddr) : Node(selfAddr, selfAddr){}
 };
