@@ -1,7 +1,7 @@
 services:
   bootnode:
     build: .
-    entrypoint: ["/usr/local/bin/bootnode"]
+    entrypoint: ["/usr/local/bin/bootnode", "--self", "172.28.0.10"]
     networks:
       testnet:
         ipv4_address: 172.28.0.10
