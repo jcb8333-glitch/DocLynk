@@ -33,21 +33,21 @@ struct neighbor {
 };
 struct nInf{
             std::string addr;
+            std::string targetAddr;
             std::string secret;
             std::vector<neighbor> connections;
 
             template <class Archive>
             void serialize(Archive& ar){
-                ar(addr, secret, connections);
+                ar(addr, targetAddr, secret, connections);
             }
         };
 
 // Contains network logic and data on a node
 class Node{
     private:
-        uint32_t nodeID = 111;
         const char* addr_;
-        const char* bootAddr_;
+        const char* targetAddr_;
         std::promise<void> sReady_;
         std::shared_future<void> sReadyFuture_;
         std::thread servThread;
@@ -116,8 +116,8 @@ class Node{
         }
 
         // Client function to be executed by a thread to connect to other nodes
-        int cli_sock(const char* targetAddr_){
-            if (targetAddr_ == this->addr_){
+        int cli_sock(){
+            if (std::strcmp(targetAddr_, addr_) == 0){
                 perror("Client thread refusing to connect to self");
                 return EXIT_FAILURE;
             }
@@ -153,7 +153,6 @@ class Node{
             return EXIT_SUCCESS;
         }
 
-        // std::string getSelfAddr(){}
     protected:
         // Send data on self over connection for network discovery
         int sendNode(int sockfd, nInf& node){
@@ -184,14 +183,15 @@ class Node{
 
         // Constructor: Start server and client threads on construction
         Node(const char* selfAddr, const char* bootAddr)
-            : addr_(std::move(selfAddr)), bootAddr_(std::move(bootAddr))
+            : addr_(selfAddr), targetAddr_(bootAddr)
         {
             nodeInfo.addr = addr_;
+            nodeInfo.targetAddr = targetAddr_;
             nodeInfo.secret = secret_;
             nodeInfo.connections = connections_;
             sReadyFuture_ = sReady_.get_future();
             servThread = std::thread(&Node::serv_sock, this);
-            cliThread = std::thread(&Node::cli_sock, this, bootAddr_);
+            cliThread = std::thread(&Node::cli_sock, this);
         }
 
         // End execution of both threads
