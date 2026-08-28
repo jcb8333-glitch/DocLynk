@@ -118,7 +118,6 @@ class Node{
         // Client function to be executed by a thread to connect to other nodes
         int cli_sock(){
             if (std::strcmp(targetAddr_, addr_) == 0){
-                perror("Client thread refusing to connect to self");
                 return EXIT_FAILURE;
             }
             sReadyFuture_.wait();
