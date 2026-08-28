@@ -69,6 +69,7 @@ Testing/
 .cache/
 
 # Testing
+docker-compose.yml
 test.*
 config.h
 
