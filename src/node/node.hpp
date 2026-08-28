@@ -33,19 +33,21 @@ struct neighbor {
 };
 struct nInf{
             std::string addr;
+            std::string targetAddr;
             std::string secret;
             std::vector<neighbor> connections;
 
             template <class Archive>
             void serialize(Archive& ar){
-                ar(addr, secret, connections);
+                ar(addr, targetAddr, secret, connections);
             }
         };
 
 // Contains network logic and data on a node
 class Node{
     private:
-        std::string addr_ = TEST_IP;
+        const char* addr_;
+        const char* targetAddr_;
         std::promise<void> sReady_;
         std::shared_future<void> sReadyFuture_;
         std::thread servThread;
@@ -54,32 +56,6 @@ class Node{
         std::vector<neighbor> connections_;
         // Struct for serialization
         struct nInf nodeInfo;
-
-        // Send data on self over connection for network discovery
-        int sendNode(int sockfd, nInf& node){
-            std::stringstream ss;
-            {
-                cereal::BinaryOutputArchive archive(ss);
-                archive(node);
-            }
-            std::string payload = ss.str();
-            uint32_t len = htonl(static_cast<uint32_t>(payload.size()));
-            if (send(sockfd, &len, sizeof(len), 0) != sizeof(len)) return -1;
-            if (send(sockfd, payload.data(), payload.size(), 0) != (ssize_t)payload.size()) return -2;
-            return 0;
-        }
-        // Receive serialized node
-        int recvNode(int sockfd, nInf& node){
-            uint32_t len;
-            if(recv(sockfd, &len, sizeof(len), MSG_WAITALL) != sizeof(len)) return -1;
-            len = ntohl(len);
-            std::string payload(len, '\0');
-            if (recv(sockfd, payload.data(), len, MSG_WAITALL) != (ssize_t)len) return -2;
-            std::stringstream ss(payload);
-            cereal::BinaryInputArchive archive(ss);
-            archive(node);
-            return 0;
-        }
 
         // Server function to be executed by thread to accept connections
         int serv_sock(){
@@ -141,6 +117,10 @@ class Node{
 
         // Client function to be executed by a thread to connect to other nodes
         int cli_sock(){
+            if (std::strcmp(targetAddr_, addr_) == 0){
+                perror("Client thread refusing to connect to self");
+                return EXIT_FAILURE;
+            }
             sReadyFuture_.wait();
             int sockfd = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
             if (sockfd < 0){
@@ -152,7 +132,7 @@ class Node{
             socketAddress.sin_family = AF_INET;
             socketAddress.sin_port = htons(8570);
 
-            int res = inet_pton(AF_INET, TEST_IP, &socketAddress.sin_addr);
+            int res = inet_pton(AF_INET, targetAddr_, &socketAddress.sin_addr);
 
             if(connect(sockfd, (struct sockaddr*)&socketAddress, sizeof(socketAddress)) < 0){
                 perror("Client failed to establish connection");
@@ -173,13 +153,40 @@ class Node{
             return EXIT_SUCCESS;
         }
 
-        // std::string getSelfAddr(){}
-
+    protected:
+        // Send data on self over connection for network discovery
+        int sendNode(int sockfd, nInf& node){
+            std::stringstream ss;
+            {
+                cereal::BinaryOutputArchive archive(ss);
+                archive(node);
+            }
+            std::string payload = ss.str();
+            uint32_t len = htonl(static_cast<uint32_t>(payload.size()));
+            if (send(sockfd, &len, sizeof(len), 0) != sizeof(len)) return -1;
+            if (send(sockfd, payload.data(), payload.size(), 0) != (ssize_t)payload.size()) return -2;
+            return 0;
+        }
+        // Receive serialized node
+        int recvNode(int sockfd, nInf& node){
+            uint32_t len;
+            if(recv(sockfd, &len, sizeof(len), MSG_WAITALL) != sizeof(len)) return -1;
+            len = ntohl(len);
+            std::string payload(len, '\0');
+            if (recv(sockfd, payload.data(), len, MSG_WAITALL) != (ssize_t)len) return -2;
+            std::stringstream ss(payload);
+            cereal::BinaryInputArchive archive(ss);
+            archive(node);
+            return 0;
+        }
     public:
 
         // Constructor: Start server and client threads on construction
-        Node(){
+        Node(const char* selfAddr, const char* bootAddr)
+            : addr_(selfAddr), targetAddr_(bootAddr)
+        {
             nodeInfo.addr = addr_;
+            nodeInfo.targetAddr = targetAddr_;
             nodeInfo.secret = secret_;
             nodeInfo.connections = connections_;
             sReadyFuture_ = sReady_.get_future();
