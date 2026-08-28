@@ -95,15 +95,7 @@ class Node{
                     return EXIT_FAILURE;
                 }
 
-                // Connection logic
-                nInf incoming;
-                if(recvNode(connfd, incoming) < 0){
-                    perror("Server thread failed to receive serialized node");
-                    return EXIT_FAILURE;
-                } else {
-                    std::cout << incoming.secret << std::endl;
-                }
-
+                handleConnection(connfd);
 
                 if(shutdown(connfd, SHUT_RDWR) == -1){
                     perror("Failed to shutdown server connection");
@@ -153,6 +145,7 @@ class Node{
         }
 
     protected:
+        virtual void handleConnection(int connfd){}
         // Send data on self over connection for network discovery
         int sendNode(int sockfd, nInf& node){
             std::stringstream ss;
@@ -201,7 +194,7 @@ class Node{
 
 
         // Destructor: Ends threads when node is destructed
-        ~Node(){
+        virtual ~Node(){
             joinAll();
         }
 };

@@ -3,6 +3,7 @@
 #include "node.hpp"
 #include <mutex>
 
+#include <iostream>
 // Bootnode for initial node connection
 class BootNode : public Node {
     private:
@@ -21,6 +22,11 @@ class BootNode : public Node {
                 std::lock_guard<std::mutex> lock(registryMutex);
                 registry.push_back(incoming);
             }
+        }
+
+        void handleConnection(int connfd) override {
+            registerNode(connfd);
+            std::cout << registry.size() << std::endl;
         }
 
         uint32_t calculateWeight(uint64_t ifBps, uint64_t rfBps = 100000000ULL){
