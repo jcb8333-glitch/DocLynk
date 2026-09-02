@@ -15,9 +15,7 @@
 #include <sstream>
 // General imports
 #include <string>
-
 #include <vector>
-#include "config.h"
 // Debugging
 #include <iostream>
 
