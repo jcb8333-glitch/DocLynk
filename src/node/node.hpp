@@ -12,6 +12,8 @@
 #include <cereal/archives/binary.hpp>
 #include <cereal/types/string.hpp>
 #include <cereal/types/vector.hpp>
+// Hashing
+#include "../hash/sha1.hpp"
 #include <sstream>
 // General imports
 #include <string>
@@ -30,7 +32,7 @@ struct neighbor {
     }
 };
 struct nInf{
-            std::string id;
+            uint64_t id;
             std::string addr;
             std::string targetAddr;
             std::string secret;
@@ -38,14 +40,14 @@ struct nInf{
 
             template <class Archive>
             void serialize(Archive& ar){
-                ar(addr, targetAddr, secret, connections);
+                ar(id, addr, targetAddr, secret, connections);
             }
         };
 
 // Contains network logic and data on a node
 class Node{
     private:
-        std::string id_;
+        uint64_t id_;
         const char* addr_;
         const char* targetAddr_;
         std::promise<void> sReady_;
@@ -203,8 +205,8 @@ class Node{
 
         // Constructor: Start server and client threads on construction
         Node(const char* selfAddr, const char* bootAddr)
-            : addr_(selfAddr), targetAddr_(bootAddr)
-        {   
+            : addr_(selfAddr), targetAddr_(bootAddr), id_(sha1Trunc(addr_))
+        {
             nodeInfo.id = id_;
             nodeInfo.addr = addr_;
             nodeInfo.targetAddr = targetAddr_;
