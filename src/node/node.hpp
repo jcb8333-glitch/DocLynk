@@ -30,6 +30,7 @@ struct neighbor {
     }
 };
 struct nInf{
+            std::string id;
             std::string addr;
             std::string targetAddr;
             std::string secret;
@@ -44,16 +45,45 @@ struct nInf{
 // Contains network logic and data on a node
 class Node{
     private:
+        std::string id_;
         const char* addr_;
         const char* targetAddr_;
         std::promise<void> sReady_;
         std::shared_future<void> sReadyFuture_;
         std::thread servThread;
         std::thread cliThread;
-        std::string secret_ = "Im trapped in a for loop";  
-        std::vector<neighbor> connections_;
+        std::string secret_ = "Im trapped in a for loop";
+        nInf successor_;
+        nInf predecessor_;  
+        std::vector<nInf> connections_;
         // Struct for serialization
         struct nInf nodeInfo;
+
+        nInf findSuccessor(std::string id){
+            if (inRange(id, id_ successor_.id)){
+                return successor_;
+            } else {
+                nInf n0 = closestPrecedingNode(id);
+                return remoteFindSuccessor(n0, id);
+            }
+        }
+        nInf closestPrecedingNode(std::string id){
+            for (int i = 256; i > 1; --i){
+                if(){
+                    return connections_[i];
+                }
+            }
+            return n;
+        }
+
+        void createRing(){
+            predecessor_ = nullptr;
+            successor_ = n;
+        }
+        void joinNode(nInf n){
+            predecessor_ = nullptr;
+            successor_ = n.findSuccessor(n);
+        }
 
         // Server function to be executed by thread to accept connections
         int serv_sock(){
@@ -174,7 +204,8 @@ class Node{
         // Constructor: Start server and client threads on construction
         Node(const char* selfAddr, const char* bootAddr)
             : addr_(selfAddr), targetAddr_(bootAddr)
-        {
+        {   
+            nodeInfo.id = id_;
             nodeInfo.addr = addr_;
             nodeInfo.targetAddr = targetAddr_;
             nodeInfo.secret = secret_;
@@ -189,7 +220,6 @@ class Node{
             if (servThread.joinable()) servThread.join();
             if (cliThread.joinable()) cliThread.join();
         }
-
 
         // Destructor: Ends threads when node is destructed
         virtual ~Node(){
