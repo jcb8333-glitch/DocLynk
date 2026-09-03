@@ -2,6 +2,7 @@
 
 #include "node.hpp"
 #include <mutex>
+#include <queue>
 
 #include <iostream>
 // Bootnode for initial node connection
@@ -36,6 +37,8 @@ class BootNode : public Node {
             if (weight > 65535) return 65535;
             return static_cast<uint32_t>(weight);
         }
+
+        void route(){}
 
     public:
         BootNode(const char* selfAddr) : Node(selfAddr, selfAddr){}
