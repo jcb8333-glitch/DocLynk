@@ -13,7 +13,7 @@ class BootNode : public Node {
 
         void registerNode(int connfd){
             nInf incoming;
-            if(recvNode(connfd, incoming) < 0){
+            if(recvPacket(connfd, incoming) < 0){
                 perror("Boot failed to receive node");
                 return;
             }
