@@ -1,6 +1,7 @@
 #pragma once
 
 #include "node.hpp"
+#include "../net/netstat.hpp"
 #include <mutex>
 #include <queue>
 
@@ -12,22 +13,27 @@ class BootNode : public Node {
         std::mutex registryMutex;
 
         void registerNode(int connfd){
-            nInf incoming;
-            if(recvPacket(connfd, incoming) < 0){
+            Packet pack;
+            if(recvPacket(connfd, pack) < 0){
                 perror("Boot failed to receive node");
                 return;
             }
 
-            //std::vector<neighbor> 
             {
                 std::lock_guard<std::mutex> lock(registryMutex);
-                registry.push_back(incoming);
+                registry.push_back(pack.payload);
             }
         }
 
-        void handleConnection(int connfd) override {
-            registerNode(connfd);
-            std::cout << registry.size() << std::endl;
+        void handleConnection(int connfd, Packet& packet) override {
+            if(packet.type == MsgType::RegReq){
+                nInf newSuccessor = findSuccessor(packet.payload.id);
+                NetStat::onJoin(packet.payload);
+                Packet res{MsgType::RegRes, packet.packetID, packet.chordID, newSuccessor};
+                sendPacket(connfd, res);
+            } else {
+                Node::handleConnection(connfd, packet);
+            }
         }
 
         uint32_t calculateWeight(uint64_t ifBps, uint64_t rfBps = 100000000ULL){
