@@ -14,6 +14,7 @@
 #include <cereal/types/vector.hpp>
 // Hashing
 #include "../hash/sha1.hpp"
+
 #include <sstream>
 // General imports
 #include <string>
@@ -21,6 +22,7 @@
 #include <vector>
 // Debugging
 #include <iostream>
+#include "../net/proto.hpp"
 
 class PeerConn {
     public:
@@ -40,45 +42,6 @@ class PeerConn {
             close(sockfd);
             if (reader.joinable()) reader.join();
         }
-};
-
-// Store data on adjacent nodes in network
-struct nInf{
-    uint64_t id;
-    std::string addr;
-    std::string targetAddr;
-    std::string secret;
-    std::vector<nInf> connections;
-
-    template <class Archive>
-    void serialize(Archive& ar){
-        ar(id, addr, targetAddr, secret, connections);
-    }
-};
-
-enum class MsgType : uint8_t {
-    Register = 0,
-    FindSuccReq = 1,
-    FindSuccResp = 2,
-    Ping = 3,
-    Pong = 4
-};
-
-struct Packet {
-    MsgType type;
-    uint64_t requestID;
-    uint64_t chordID;
-    nInf payload;
-
-    template <class Archive>
-    void serialize(Archive& ar){
-        ar(type, requestID, chordID payload);
-    }
-};
-
-struct RouteEntry{
-    uint64_t src;
-    nInf node;
 };
 
 // Contains network logic and data on a node
@@ -102,7 +65,7 @@ class Node{
         std::unordered_map<std::string, std::shared_ptr<PeerConn>> connectionPool;
 
         nInf remoteFindSuccessor(std::shared_ptr<PeerConn> conn, uint64_t chordID){
-            uint64_t reqID = chordID++;
+            uint64_t reqID = nextRequestID++;
 
             std::promise<Packet> respPromise;
             std::future<Packet> respFuture = respPromise.get_future();
@@ -133,9 +96,9 @@ class Node{
                     break;
                 }
 
-                if(packet.type == MsgType::FindSuccResp || packet.type == MsgType::Pong){
+                if(packet.type == MsgType::FindSuccRes || packet.type == MsgType::Pong){
                     std::lock_guard<std::mutex> lock(conn->pendingMutex);
-                    auto it = conn->pending.find(packet.requestID);
+                    auto it = conn->pending.find(packet.packetID);
                     if(it != conn->pending.end()){
                         it->second.set_value(packet);
                         conn->pending.erase(it);
@@ -192,26 +155,6 @@ class Node{
             std::lock_guard<std::mutex> lock(poolMutex);
             connectionPool[peerAddr] = conn;
             return conn;
-        }
-
-        nInf findSuccessor(uint64_t id){
-            if(inRange(id, id_, successor_.id, true)){
-                return successor_;
-            } else {
-                nInf n0 = closestPrecedingNode(id);
-                auto conn = getOrConnect(n0.addr);
-                if(!conn) return n0;
-                return remoteFindSuccessor(conn, id);
-            }
-        }
-
-        void createRing(){
-            predecessor_ = nInf{};
-            //successor_ = n;
-        }
-        void joinNode(nInf n){
-            predecessor_ = nInf{};
-            successor_ = findSuccessor(n.id);
         }
 
         // Server function to be executed by thread to accept connections
@@ -283,7 +226,7 @@ class Node{
 
             // Connection logic
             char buffer[1024] = {0};
-            Packet pack{MsgType::Register, nextRequestID++, id_, nodeInfo};
+            Packet pack{MsgType::RegReq, nextRequestID++, id_, nodeInfo};
 
             if(sendPacket(sockfd, pack) < 0){
                 perror("Client thread failed to serialize node");
@@ -323,10 +266,21 @@ class Node{
             joinAll();
         }
 
+        nInf findSuccessor(uint64_t id){
+            if(inRange(id, id_, successor_.id, true)){
+                return successor_;
+            } else {
+                nInf n0 = closestPrecedingNode(id);
+                auto conn = getOrConnect(n0.addr);
+                if(!conn) return n0;
+                return remoteFindSuccessor(conn, id);
+            }
+        }
+
         virtual void handleConnection(int sockfd, Packet& packet){
             if (packet.type == MsgType::FindSuccReq) {
                 nInf res = findSuccessor(packet.chordID);
-                Packet resp{MsgType::FindSuccResp, packet.requestID, packet.chordID, res};
+                Packet resp{MsgType::FindSuccRes, packet.packetID, packet.chordID, res};
                 sendPacket(sockfd, resp);
             }
         }
