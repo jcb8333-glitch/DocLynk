@@ -1,9 +1,15 @@
 #pragma once
 // Posix socket programming
+#include <atomic>
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <future>
 #include <thread>
+#include <unordered_map>
+#include <optional>
+#include <vector>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -54,37 +60,23 @@ class Node{
         std::shared_future<void> sReadyFuture_;
         std::thread servThread;
         std::thread cliThread;
-        std::string secret_ = "Im trapped in a for loop";
         nInf successor_;
         nInf predecessor_;
+        std::mutex succMutex_;
+        std::mutex predMutex_;
+        std::thread stabilizeThread;
+        std::atomic<bool> running_{true};
         std::vector<RouteEntry> routeTable_;
-        std::vector<nInf> connections_;
+        std::vector<nInf> successorList_;
         struct nInf nodeInfo;
         std::atomic<uint64_t> nextRequestID{1};
         std::mutex poolMutex;
         std::unordered_map<std::string, std::shared_ptr<PeerConn>> connectionPool;
 
         nInf remoteFindSuccessor(std::shared_ptr<PeerConn> conn, uint64_t chordID){
-            uint64_t reqID = nextRequestID++;
-
-            std::promise<Packet> respPromise;
-            std::future<Packet> respFuture = respPromise.get_future();
-            {
-                std::lock_guard<std::mutex> lock(conn->pendingMutex);
-                conn->pending[reqID] = std::move(respPromise);
-            }
-
-            Packet req{MsgType::FindSuccReq, reqID, chordID, nodeInfo};
-            {
-                std::lock_guard<std::mutex> lock(conn->sendMutex);
-                sendPacket(conn->sockfd, req);
-            }
-
-            auto status = respFuture.wait_for(std::chrono::seconds(5));
-            if(status != std::future_status::ready){
-                return nInf{};
-            }
-            return respFuture.get().payload;
+            Packet req{MsgType::FindSuccReq, nextRequestID++, chordID, nodeInfo};
+            auto res = remoteCall(conn, req);
+            return res ? res->payload : nInf{};
         }
 
         void updateNodeInfo(nInf node){
@@ -133,6 +125,29 @@ class Node{
                 return inclusive ? (id > src || id <= dst) : (id > src || id < dst);
             }
         }
+
+        //TODO: implement the following for chord function
+        void stabilize(){
+            if (!successor_) return;
+
+            // RPC call to successor for predecessor
+
+
+        }
+
+        void notify(){
+
+        }
+
+        void fixFingers(){
+
+        }
+
+        void checkPredecessor(){
+
+        }
+
+        bool isUnset(const Node& node){return node.addr_ == nullptr || node.addr_[0] == '\0';}
 
         nInf closestPrecedingNode(uint64_t id){
             for (int i = 63; i >= 0; --i){
@@ -255,12 +270,39 @@ class Node{
             return EXIT_SUCCESS;
         }
 
+        std::optional<Packet> remoteCall(std::shared_ptr<PeerConn> conn, Packet req){
+            uint32_t reqID = req.packetID;
+            std::promise<Packet> resPromise;
+            std::future<Packet> resFuture = resPromise.get_future();
+            {
+                std::lock_guard<std::mutex> lock(conn->pendingMutex);
+                conn->pending[reqID] = std::move(resPromise);
+            }
+            {
+                std::lock_guard<std::mutex> lock(conn->sendMutex);
+                if(sendPacket(conn->sockfd, req) < 0){
+                    std::lock_guard<std::mutex> lock2(conn->pendingMutex);
+                    conn->pending.erase(reqID);
+                    return std::nullopt;
+                }
+            }
+            auto status = resFuture.wait_for(std::chrono::seconds(5));
+            if(status != std::future_status::ready){
+                std::lock_guard<std::mutex> lock(conn->pendingMutex);
+                conn->pending.erase(reqID);
+                return std::nullopt;
+            }
+            return resFuture.get();
+        }
+
     public:
 
         // Constructor: Start server and client threads on construction
         Node(const char* selfAddr, const char* bootAddr)
             : addr_(selfAddr), targetAddr_(bootAddr), id_(sha1Trunc(addr_))
         {
+            successorList_.push_back(successor_);
+
             nodeInfo.id = id_;
             nodeInfo.addr = addr_;
             nodeInfo.targetAddr = targetAddr_;
