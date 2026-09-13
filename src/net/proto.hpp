@@ -31,7 +31,7 @@ struct nInf{
 
 struct Packet {
     MsgType type;
-    uint64_t packetID;
+    uint32_t packetID;
     uint64_t chordID;
     nInf payload;
 
