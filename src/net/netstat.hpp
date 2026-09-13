@@ -23,21 +23,12 @@ class NetStat {
 
         void onDiscover(nInf node){
             pendingConns.push(node);
-            InitRtTables(node);
             std::cout << "Node discovered on network, ID: " << node.id << std::endl;
         }
 
         void onLeave(nInf node){
             connCount--;
             std::cout << node.id << " disconnected." << std::endl;
-        }
-
-        void InitRtTables(nInf node){
-            for(int i = 0; i < 64; ++i){
-                uint64_t start = node.id + (1ULL << i);
-                nInf owner = findAuthSuccessor(start);
-                node.routeTable[i] = {start, owner};
-            }
         }
 
     private:
