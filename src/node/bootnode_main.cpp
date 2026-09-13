@@ -1,5 +1,6 @@
 #include <cstring>
 #include "bootnode.hpp"
+#include "../net/netstat.hpp"
 #include <iostream>
 
 int main(int argc, char* argv[]){
@@ -9,6 +10,7 @@ int main(int argc, char* argv[]){
             selfAddr = argv[i+1];
         }
     }
+
     if(selfAddr){
         BootNode boot(selfAddr);
         boot.joinAll();
