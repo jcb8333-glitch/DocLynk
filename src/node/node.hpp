@@ -47,7 +47,7 @@ class PeerConn {
 // Contains network logic and data on a node
 class Node{
     private:
-        uint64_t id_;
+        const uint64_t id_;
         const char* addr_;
         const char* targetAddr_;
         std::promise<void> sReady_;
@@ -57,7 +57,7 @@ class Node{
         std::string secret_ = "Im trapped in a for loop";
         nInf successor_;
         nInf predecessor_;
-        std::vector<RouteEntry> routeTable;
+        std::vector<RouteEntry> routeTable_;
         std::vector<nInf> connections_;
         struct nInf nodeInfo;
         std::atomic<uint64_t> nextRequestID{1};
@@ -87,6 +87,11 @@ class Node{
             return respFuture.get().payload;
         }
 
+        void updateNodeInfo(nInf node){
+            // Currently only updating routing table to configure network
+            // Add more vars as needed
+        }
+
         // Loop to read incoming packets
         void readLoop(std::shared_ptr<PeerConn> conn){
             while (conn->alive){
@@ -94,6 +99,18 @@ class Node{
                 if (recvPacket(conn->sockfd, packet) < 0){
                     conn->alive = false;
                     break;
+                }
+
+                switch (packet.type){
+                    case MsgType::RtReq:
+                        break;
+                    case MsgType::RtRes:
+                        successor_=packet.payload;
+                        updateNodeInfo(successor_);
+                        getOrConnect(successor_.addr);
+                        break;
+                    default:
+                        break;
                 }
 
                 if(packet.type == MsgType::FindSuccRes || packet.type == MsgType::Pong){
@@ -119,8 +136,8 @@ class Node{
 
         nInf closestPrecedingNode(uint64_t id){
             for (int i = 63; i >= 0; --i){
-                if(routeTable[i].node.id != 0 && inRange(routeTable[i].node.id, id_, id)){
-                    return routeTable[i].node;
+                if(routeTable_[i].node.id != 0 && inRange(routeTable_[i].node.id, id_, id)){
+                    return routeTable_[i].node;
                 }
             }
             nInf self;
@@ -226,7 +243,7 @@ class Node{
 
             // Connection logic
             char buffer[1024] = {0};
-            Packet pack{MsgType::RegReq, nextRequestID++, id_, nodeInfo};
+            Packet pack{MsgType::RtReq, nextRequestID++, id_, nodeInfo};
 
             if(sendPacket(sockfd, pack) < 0){
                 perror("Client thread failed to serialize node");
@@ -247,7 +264,7 @@ class Node{
             nodeInfo.id = id_;
             nodeInfo.addr = addr_;
             nodeInfo.targetAddr = targetAddr_;
-            nodeInfo.secret = secret_;
+            nodeInfo.routeTable = routeTable_;
             nodeInfo.connections = {};
 
             sReadyFuture_ = sReady_.get_future();
@@ -283,31 +300,5 @@ class Node{
                 Packet resp{MsgType::FindSuccRes, packet.packetID, packet.chordID, res};
                 sendPacket(sockfd, resp);
             }
-        }
-
-        // Send data on self over connection for network discovery
-        int sendPacket(int sockfd, Packet& packet){
-            std::stringstream ss;
-            {
-                cereal::BinaryOutputArchive archive(ss);
-                archive(packet);
-            }
-            std::string payload = ss.str();
-            uint32_t len = htonl(static_cast<uint32_t>(payload.size()));
-            if (send(sockfd, &len, sizeof(len), 0) != sizeof(len)) return -1;
-            if (send(sockfd, payload.data(), payload.size(), 0) != (ssize_t)payload.size()) return -2;
-            return 0;
-        }
-        // Receive serialized node
-        int recvPacket(int sockfd, Packet& packet){
-            uint32_t len;
-            if(recv(sockfd, &len, sizeof(len), MSG_WAITALL) != sizeof(len)) return -1;
-            len = ntohl(len);
-            std::string payload(len, '\0');
-            if (recv(sockfd, payload.data(), len, MSG_WAITALL) != (ssize_t)len) return -2;
-            std::stringstream ss(payload);
-            cereal::BinaryInputArchive archive(ss);
-            archive(packet);
-            return 0;
         }
 };
