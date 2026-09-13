@@ -73,18 +73,13 @@ class Node{
         std::mutex poolMutex;
         std::unordered_map<std::string, std::shared_ptr<PeerConn>> connectionPool;
 
-        nInf remoteFindSuccessor(std::shared_ptr<PeerConn> conn, uint64_t chordID){
-            Packet req{MsgType::FindSuccReq, nextRequestID++, chordID, nodeInfo};
+        nInf remoteFindSuccessor(std::shared_ptr<PeerConn> conn){
+            Packet req{MsgType::FindSuccReq, nextRequestID++, 0, nodeInfo};
             auto res = remoteCall(conn, req);
             return res ? res->payload : nInf{};
         }
         nInf remoteFindPredecessor(std::shared_ptr<PeerConn> conn, uint64_t chordID){
             Packet req{MsgType::GetPredReq, nextRequestID++, 0, nodeInfo};
-            auto res = remoteCall(conn, req);
-            return res ? res->payload : nInf{};
-        }
-        nInf remoteNotify(std::shared_ptr<PeerConn> conn, uint64_t chordID){
-            Packet req{MsgType::NotifyReq, nextRequestID++, chordID, nodeInfo};
             auto res = remoteCall(conn, req);
             return res ? res->payload : nInf{};
         }
@@ -103,7 +98,7 @@ class Node{
                     break;
                 }
 
-                if(packet.type == MsgType::FindSuccRes || packet.type == MsgType::Pong){
+                if(packet.type == MsgType::FindSuccRes || packet.type == MsgType::GetPredRes || packet.type == MsgType::Pong){
                     std::lock_guard<std::mutex> lock(conn->pendingMutex);
                     auto it = conn->pending.find(packet.packetID);
                     if(it != conn->pending.end()){
@@ -321,6 +316,7 @@ class Node{
         Node(const char* selfAddr, const char* bootAddr)
             : addr_(selfAddr), targetAddr_(bootAddr), id_(sha1Trunc(addr_))
         {
+            successor_ = nodeInfo;
             successorList_.push_back(successor_);
 
             nodeInfo.id = id_;
@@ -340,9 +336,18 @@ class Node{
             if (cliThread.joinable()) cliThread.join();
         }
 
+        void stabilizeLoop(){
+            while(running_){
+                stabilize();
+                std::this_thread::sleep_for(std::chrono::seconds(1));
+            }
+        }
+
         // Destructor: Ends threads when node is destructed
         virtual ~Node(){
+            running_ = false;
             joinAll();
+            if (stabilize.joinable()) stabilizeThread.join();
         }
 
         nInf findSuccessor(uint64_t id){
@@ -357,10 +362,28 @@ class Node{
         }
 
         virtual void handleConnection(int sockfd, Packet& packet){
-            if (packet.type == MsgType::FindSuccReq) {
-                nInf res = findSuccessor(packet.chordID);
-                Packet resp{MsgType::FindSuccRes, packet.packetID, packet.chordID, res};
-                sendPacket(sockfd, resp);
+            switch (packet.type){
+                case MsgType::FindSuccReq: {
+                    nInf res = findSuccessor(packet.chordID);
+                    Packet resp{MsgType::FindSuccRes, packet.packetID, packet.chordID, res};
+                    sendPacket(sockfd, resp);
+                    break;
+                }
+                case MsgType::GetPredReq: {
+                    nInf pred;
+                    {
+                        std::lock_guard<std::mutex> lock(predMutex_);
+                        pred = predecessor_;
+                    }
+                    Packet resp{MsgType::GetPredRes, packet.packetID, packet.chordID, pred};
+                    sendPacket(sockfd, resp);
+                    break;
+                }
+                case MsgType::NotifyReq:
+                    notify(packet.payload);
+                    break;
+                default:
+                    break;
             }
         }
 };
