@@ -103,18 +103,6 @@ class Node{
                     break;
                 }
 
-                switch (packet.type){
-                    case MsgType::RtReq:
-                        break;
-                    case MsgType::RtRes:
-                        successor_=packet.payload;
-                        updateNodeInfo(successor_);
-                        getOrConnect(successor_.addr);
-                        break;
-                    default:
-                        break;
-                }
-
                 if(packet.type == MsgType::FindSuccRes || packet.type == MsgType::Pong){
                     std::lock_guard<std::mutex> lock(conn->pendingMutex);
                     auto it = conn->pending.find(packet.packetID);
@@ -138,15 +126,37 @@ class Node{
 
         //TODO: implement the following for chord function
         void stabilize(){
-            if (!successor_) return;
+            nInf succ;
+            {
+                std::lock_guard<std::mutex> lock(succMutex_);
+                succ = successor_;
+            }
+            if (isUnset(succ)) return;
 
-            // RPC call to successor for predecessor
+            auto conn = getOrConnect(succ.addr);
+            if (!conn) return;
 
+            nInf x = remoteFindPredecessor(conn);
+            if(!isUnset(x) && inRange(x.id, id_, succ.id)){
+                std::lock_guard<std::mutex> lock(succMutex_);
+                successor_ = x;
+                succ = x;
+            }
+
+            auto succConn = getOrConnect(succ.addr);
+            if (succConn){
+                Packet req{MsgType::NotifyReq, nextRequestID++, 0, nodeInfo};
+                std::lock_guard<std::mutex> lock(succConn->sendMutex);
+                sendPacket(succConn->sockfd, req);
+            }
 
         }
 
-        void notify(){
-
+        void notify(nInf candidate){
+            std::lock_guard<std::mutex> lock(predMutex_);
+            if(isUnset(predecessor_) || inRange(candidate.id, predecessor_.id, id_)){
+                predecessor_ = candidate;
+            }
         }
 
         void fixFingers(){
@@ -157,7 +167,7 @@ class Node{
 
         }
 
-        bool isUnset(const Node& node){return node.addr_ == nullptr || node.addr_[0] == '\0';}
+        bool isUnset(const nInf& node){return node.addr.empty();}
 
         nInf closestPrecedingNode(uint64_t id){
             for (int i = 63; i >= 0; --i){
@@ -281,7 +291,7 @@ class Node{
         }
 
         std::optional<Packet> remoteCall(std::shared_ptr<PeerConn> conn, Packet req){
-            uint32_t reqID = req.packetID;
+        uint64_t reqID = req.packetID;
             std::promise<Packet> resPromise;
             std::future<Packet> resFuture = resPromise.get_future();
             {
