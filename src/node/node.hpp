@@ -78,6 +78,16 @@ class Node{
             auto res = remoteCall(conn, req);
             return res ? res->payload : nInf{};
         }
+        nInf remoteFindPredecessor(std::shared_ptr<PeerConn> conn, uint64_t chordID){
+            Packet req{MsgType::GetPredReq, nextRequestID++, 0, nodeInfo};
+            auto res = remoteCall(conn, req);
+            return res ? res->payload : nInf{};
+        }
+        nInf remoteNotify(std::shared_ptr<PeerConn> conn, uint64_t chordID){
+            Packet req{MsgType::NotifyReq, nextRequestID++, chordID, nodeInfo};
+            auto res = remoteCall(conn, req);
+            return res ? res->payload : nInf{};
+        }
 
         void updateNodeInfo(nInf node){
             // Currently only updating routing table to configure network
