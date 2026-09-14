@@ -68,17 +68,18 @@ class Node{
         std::atomic<bool> running_{true};
         std::vector<RouteEntry> routeTable_;
         std::vector<nInf> successorList_;
+        int fingerIdx_ = 0;
         struct nInf nodeInfo;
         std::atomic<uint64_t> nextRequestID{1};
         std::mutex poolMutex;
         std::unordered_map<std::string, std::shared_ptr<PeerConn>> connectionPool;
 
-        nInf remoteFindSuccessor(std::shared_ptr<PeerConn> conn){
-            Packet req{MsgType::FindSuccReq, nextRequestID++, 0, nodeInfo};
+        nInf remoteFindSuccessor(std::shared_ptr<PeerConn> conn, uint64_t chordID){
+            Packet req{MsgType::FindSuccReq, nextRequestID++, chordID, nodeInfo};
             auto res = remoteCall(conn, req);
             return res ? res->payload : nInf{};
         }
-        nInf remoteFindPredecessor(std::shared_ptr<PeerConn> conn, uint64_t chordID){
+        nInf remoteFindPredecessor(std::shared_ptr<PeerConn> conn){
             Packet req{MsgType::GetPredReq, nextRequestID++, 0, nodeInfo};
             auto res = remoteCall(conn, req);
             return res ? res->payload : nInf{};
@@ -98,7 +99,17 @@ class Node{
                     break;
                 }
 
-                if(packet.type == MsgType::FindSuccRes || packet.type == MsgType::GetPredRes || packet.type == MsgType::Pong){
+                switch (packet.type){
+                    case MsgType::Ping:{
+                        Packet packet{MsgType::Pong, packet.packetID, packet.chordID, nodeInfo};
+                        sendPacket(conn->sockfd, packet);
+                        break;
+                    }
+                    default:{
+                        break;
+                    }
+                }
+                if ( packet.type == MsgType::FindSuccRes ||  packet.type == MsgType::GetPredRes ||  packet.type == MsgType::Pong){
                     std::lock_guard<std::mutex> lock(conn->pendingMutex);
                     auto it = conn->pending.find(packet.packetID);
                     if(it != conn->pending.end()){
@@ -108,6 +119,7 @@ class Node{
                 } else {
                     handleConnection(conn->sockfd, packet);
                 }
+
             }
         }
 
@@ -119,7 +131,6 @@ class Node{
             }
         }
 
-        //TODO: implement the following for chord function
         void stabilize(){
             nInf succ;
             {
@@ -154,20 +165,45 @@ class Node{
             }
         }
 
-        void fixFingers(){
-
+        void updateRtTable(){
+            fingerIdx_ = (fingerIdx_ % 64) + 1;
+            uint64_t start = id_ + (1ULL << (fingerIdx_ - 1));
+            nInf owner = findSuccessor(start);
+            routeTable_[fingerIdx_ - 1] = {start, owner.id, owner.addr};
         }
 
         void checkPredecessor(){
+            nInf pred;
+            {
+                std::lock_guard<std::mutex> lock(predMutex_);
+                pred = predecessor_;
+            }
+            if (isUnset(pred)) return;
 
+            auto conn = getOrConnect(pred.addr);
+            if(!conn){
+                std::lock_guard<std::mutex> lock(predMutex_);
+                predecessor_ = nInf{};
+                return;
+            }
+
+            Packet req{MsgType::Ping, nextRequestID++, 0, nodeInfo};
+            auto res = remoteCall(conn, req);
+            if(!res){
+                std::lock_guard<std::mutex> lock(predMutex_);
+                predecessor_ = nInf{};
+            }
         }
 
         bool isUnset(const nInf& node){return node.addr.empty();}
 
         nInf closestPrecedingNode(uint64_t id){
             for (int i = 63; i >= 0; --i){
-                if(routeTable_[i].node.id != 0 && inRange(routeTable_[i].node.id, id_, id)){
-                    return routeTable_[i].node;
+                if (routeTable_[i].nodeID != 0 && inRange(routeTable_[i].nodeID, id_, id)){
+                    nInf n;
+                    n.id = routeTable_[i].nodeID;
+                    n.addr = routeTable_[i].addr;
+                    return n;
                 }
             }
             nInf self;
@@ -263,8 +299,6 @@ class Node{
             socketAddress.sin_family = AF_INET;
             socketAddress.sin_port = htons(8570);
 
-            int res = inet_pton(AF_INET, targetAddr_, &socketAddress.sin_addr);
-
             if(connect(sockfd, (struct sockaddr*)&socketAddress, sizeof(socketAddress)) < 0){
                 perror("Client failed to establish connection");
                 close(sockfd);
@@ -272,14 +306,6 @@ class Node{
             }
 
             // Connection logic
-            char buffer[1024] = {0};
-            Packet pack{MsgType::RtReq, nextRequestID++, id_, nodeInfo};
-
-            if(sendPacket(sockfd, pack) < 0){
-                perror("Client thread failed to serialize node");
-                close(sockfd);
-                return EXIT_FAILURE;
-            }
 
             close(sockfd);
             return EXIT_SUCCESS;
@@ -316,18 +342,19 @@ class Node{
         Node(const char* selfAddr, const char* bootAddr)
             : addr_(selfAddr), targetAddr_(bootAddr), id_(sha1Trunc(addr_))
         {
-            successor_ = nodeInfo;
-            successorList_.push_back(successor_);
-
             nodeInfo.id = id_;
             nodeInfo.addr = addr_;
             nodeInfo.targetAddr = targetAddr_;
             nodeInfo.routeTable = routeTable_;
             nodeInfo.connections = {};
 
+            successor_ = nodeInfo;
+            successorList_.push_back(successor_);
+
             sReadyFuture_ = sReady_.get_future();
             servThread = std::thread(&Node::serv_sock, this);
             cliThread = std::thread(&Node::cli_sock, this);
+            stabilizeThread =std::thread(&Node::stabilizeLoop, this);
         }
 
         // End execution of both threads
@@ -339,6 +366,7 @@ class Node{
         void stabilizeLoop(){
             while(running_){
                 stabilize();
+                updateRtTable();
                 std::this_thread::sleep_for(std::chrono::seconds(1));
             }
         }
@@ -347,10 +375,15 @@ class Node{
         virtual ~Node(){
             running_ = false;
             joinAll();
-            if (stabilize.joinable()) stabilizeThread.join();
+            if (stabilizeThread.joinable()) stabilizeThread.join();
         }
 
         nInf findSuccessor(uint64_t id){
+            nInf succ;
+            {
+                std::lock_guard<std::mutex> lock(succMutex_);
+                succ = successor_;
+            }
             if(inRange(id, id_, successor_.id, true)){
                 return successor_;
             } else {

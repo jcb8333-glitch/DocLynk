@@ -44,15 +44,4 @@ class NetStat {
                 std::lock_guard<std::mutex> lock(mapMutex);
             }
         }
-        
-        nInf findAuthSuccessor(uint64_t id){
-            auto hit = netMap.upper_bound(id);
-            if (hit == netMap.end()){
-                return netMap.begin()->second;
-            }
-            return hit->second;
-        }
-
-
-
 };
