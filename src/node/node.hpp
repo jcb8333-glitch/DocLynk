@@ -364,6 +364,7 @@ class Node{
             while(running_){
                 stabilize();
                 updateRtTable();
+                checkPredecessor();
                 std::this_thread::sleep_for(std::chrono::seconds(1));
             }
         }
@@ -417,3 +418,9 @@ class Node{
             }
         }
 };
+
+/*
+TODO: 
+ - Resize routing table
+ - Lock find successor
+*/
