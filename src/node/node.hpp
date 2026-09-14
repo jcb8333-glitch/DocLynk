@@ -289,25 +289,22 @@ class Node{
                 return EXIT_FAILURE;
             }
             sReadyFuture_.wait();
-            int sockfd = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
-            if (sockfd < 0){
-                perror("Failed to create client socket");
+
+            auto conn = getOrConnect(targetAddr_);
+            if (!conn){
+                perror("Client failed to establish connection to boot node");
                 return EXIT_FAILURE;
             }
 
-            struct sockaddr_in socketAddress;
-            socketAddress.sin_family = AF_INET;
-            socketAddress.sin_port = htons(8570);
-
-            if(connect(sockfd, (struct sockaddr*)&socketAddress, sizeof(socketAddress)) < 0){
-                perror("Client failed to establish connection");
-                close(sockfd);
+            nInf succ = remoteFindSuccessor(conn, id_);
+            if(isUnset(succ)){
+                perror("Join failed: boot node did not return a valid successor");
                 return EXIT_FAILURE;
             }
-
-            // Connection logic
-
-            close(sockfd);
+            {
+                std::lock_guard<std::mutex> lock(succMutex_);
+                successor_ = succ;
+            }
             return EXIT_SUCCESS;
         }
 
