@@ -12,6 +12,7 @@ enum class MsgType : uint8_t {
 };
 
 struct RouteEntry{
+    uint64_t startID;
     uint64_t nodeID;
     std::string addr;
 };
