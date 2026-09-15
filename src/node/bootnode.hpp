@@ -2,10 +2,7 @@
 
 #include "node.hpp"
 #include "../net/netstat.hpp"
-#include <mutex>
 #include <queue>
-
-#include <iostream>
 
 class BootNode : public Node {
     private:

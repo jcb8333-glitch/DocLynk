@@ -1,34 +1,30 @@
 #pragma once
-// Posix socket programming
-#include <atomic>
-#include <chrono>
+
+// Posix & C libs
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <future>
-#include <thread>
-#include <unordered_map>
-#include <optional>
-#include <vector>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <unistd.h>
-#include <array>
 // Serialization
 #include <cereal/archives/binary.hpp>
 #include <cereal/types/string.hpp>
 #include <cereal/types/vector.hpp>
-// Hashing
-#include "../hash/sha1.hpp"
+// Concurrency
+#include <thread>
+#include <future>
+#include <atomic>
+#include <chrono>
+// Standard lib
+#include <array>
+#include <unordered_map>
+#include <optional>
+#include <ostream>
 
-#include <sstream>
-// General imports
-#include <string>
-
-// Debugging
-#include <iostream>
 #include "../net/proto.hpp"
+#include "../hash/sha1.hpp"
 
 class PeerConn {
     public:

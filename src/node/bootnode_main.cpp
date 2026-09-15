@@ -1,7 +1,5 @@
-#include <cstring>
 #include "bootnode.hpp"
 #include "../net/netstat.hpp"
-#include <iostream>
 
 int main(int argc, char* argv[]){
     const char* selfAddr = nullptr;
