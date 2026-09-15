@@ -14,6 +14,7 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <unistd.h>
+#include <array>
 // Serialization
 #include <cereal/archives/binary.hpp>
 #include <cereal/types/string.hpp>
@@ -24,8 +25,7 @@
 #include <sstream>
 // General imports
 #include <string>
-#include <cstring>
-#include <vector>
+
 // Debugging
 #include <iostream>
 #include "../net/proto.hpp"
@@ -66,7 +66,7 @@ class Node{
         std::mutex predMutex_;
         std::thread stabilizeThread;
         std::atomic<bool> running_{true};
-        std::vector<RouteEntry> routeTable_;
+        std::array<RouteEntry, 64> routeTable_;
         std::vector<nInf> successorList_;
         int fingerIdx_ = 0;
         struct nInf nodeInfo;
@@ -85,11 +85,6 @@ class Node{
             return res ? res->payload : nInf{};
         }
 
-        void updateNodeInfo(nInf node){
-            // Currently only updating routing table to configure network
-            // Add more vars as needed
-        }
-
         // Loop to read incoming packets
         void readLoop(std::shared_ptr<PeerConn> conn){
             while (conn->alive){
@@ -101,8 +96,8 @@ class Node{
 
                 switch (packet.type){
                     case MsgType::Ping:{
-                        Packet packet{MsgType::Pong, packet.packetID, packet.chordID, nodeInfo};
-                        sendPacket(conn->sockfd, packet);
+                        Packet res{MsgType::Pong, packet.packetID, packet.chordID, nodeInfo};
+                        sendPacket(conn->sockfd, res);
                         break;
                     }
                     default:{
@@ -339,10 +334,12 @@ class Node{
         Node(const char* selfAddr, const char* bootAddr)
             : addr_(selfAddr), targetAddr_(bootAddr), id_(sha1Trunc(addr_))
         {
+
+            std::vector<RouteEntry> rt(routeTable_.begin(), routeTable_.end());
             nodeInfo.id = id_;
             nodeInfo.addr = addr_;
             nodeInfo.targetAddr = targetAddr_;
-            nodeInfo.routeTable = routeTable_;
+            nodeInfo.routeTable = rt;
             nodeInfo.connections = {};
 
             successor_ = nodeInfo;
@@ -382,8 +379,8 @@ class Node{
                 std::lock_guard<std::mutex> lock(succMutex_);
                 succ = successor_;
             }
-            if(inRange(id, id_, successor_.id, true)){
-                return successor_;
+            if(inRange(id, id_, succ.id, true)){
+                return succ;
             } else {
                 nInf n0 = closestPrecedingNode(id);
                 auto conn = getOrConnect(n0.addr);
@@ -418,9 +415,3 @@ class Node{
             }
         }
 };
-
-/*
-TODO: 
- - Resize routing table
- - Lock find successor
-*/
