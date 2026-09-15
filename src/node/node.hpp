@@ -26,6 +26,11 @@
 #include "../net/proto.hpp"
 #include "../hash/sha1.hpp"
 
+/*
+PeerConn represents the connection between nodes.
+When a connection is made in Node, a TCP connection is made to reference the connection and hold the file descriptor
+and manage thread locking and promises. Destructing the PeerConn breaks the connection and closes the socket.
+*/
 class PeerConn {
     public:
         int sockfd;
