@@ -30,6 +30,7 @@
 PeerConn represents the connection between nodes.
 When a connection is made in Node, a TCP connection is made to reference the connection and hold the file descriptor
 and manage thread locking and promises. Destructing the PeerConn breaks the connection and closes the socket.
+Creates a reader thread to be accessed by a Node to read data received on a connection.
 */
 class PeerConn {
     public:
@@ -51,7 +52,11 @@ class PeerConn {
         }
 };
 
-// Contains network logic and data on a node
+/*
+Node manages P2P connection between clients on the network in a chord DHT configuration.
+Uses server and client thread to hold a connection and uses a stabilizer thread to maintain
+connections on the network. 
+*/
 class Node{
     private:
         const char* addr_;
