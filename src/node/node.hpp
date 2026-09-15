@@ -53,9 +53,9 @@ class PeerConn {
 // Contains network logic and data on a node
 class Node{
     private:
-        const uint64_t id_;
         const char* addr_;
         const char* targetAddr_;
+        const uint64_t id_;
         std::promise<void> sReady_;
         std::shared_future<void> sReadyFuture_;
         std::thread servThread;
@@ -362,6 +362,22 @@ class Node{
                 stabilize();
                 updateRtTable();
                 checkPredecessor();
+
+                nInf succ, pred;
+                {
+                    std::lock_guard<std::mutex> lock(succMutex_);
+                    succ = successor_;
+                }
+                {
+                    std::lock_guard<std::mutex> lock(predMutex_);
+                    pred = predecessor_;
+                }
+                std::cout << "[Node " << id_ << "] successor: "
+                    << (isUnset(succ) ? "none" : std::to_string(succ.id) + " (" + succ.addr + ")")
+                    << " | predecessor: "
+                    << (isUnset(pred) ? "none" : std::to_string(pred.id) + " (" + pred.addr + ")")
+                    << std::endl;
+
                 std::this_thread::sleep_for(std::chrono::seconds(1));
             }
         }

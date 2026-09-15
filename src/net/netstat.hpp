@@ -1,13 +1,18 @@
 #pragma once
 
 #include <ostream>
+#include <iostream>
 #include <map>
 #include <queue>
+#include <mutex>
+#include <thread>
+#include <atomic>
+#include <chrono>
 #include "../net/proto.hpp"
 
 class NetStat {
     public:
-        int connCount;
+        int connCount = 0;
         std::map<uint64_t, nInf> netMap;
         std::queue<nInf> pendingConns;
 
@@ -15,33 +20,45 @@ class NetStat {
 
         ~NetStat(){
             running_ = false;
+            if (monitorThread.joinable()) monitorThread.join();
         }
 
         void start(){
+            running_ = true;
             monitorThread = std::thread(&NetStat::monitorLoop, this);
         }
 
         void onDiscover(nInf node){
-            pendingConns.push(node);
-            std::cout << "Node discovered on network, ID: " << node.id << std::endl;
+            {
+                std::lock_guard<std::mutex> lock(mapMutex);
+                pendingConns.push(node);
+            }
+            std::cout << "[NetStat] Node discovered, ID: " << node.id
+                       << " addr: " << node.addr << std::endl;
         }
 
         void onLeave(nInf node){
             connCount--;
-            std::cout << node.id << " disconnected." << std::endl;
+            std::cout << "[NetStat] Node left, ID: " << node.id
+                       << " (connCount now " << connCount << ")" << std::endl;
         }
 
     private:
-        //std::map<uint64_t, NodeStatus> netMap;
         std::mutex mapMutex;
         std::thread monitorThread;
         std::atomic<bool> running_;
 
         void monitorLoop(){
-            while(running_){
+            while (running_){
                 std::this_thread::sleep_for(std::chrono::seconds(5));
-                auto now = std::chrono::steady_clock::now();
+
                 std::lock_guard<std::mutex> lock(mapMutex);
+                std::cout << "[NetStat] --- status tick, pending: "
+                           << pendingConns.size()
+                           << ", tracked: " << netMap.size() << " ---" << std::endl;
+                for (const auto& [id, info] : netMap){
+                    std::cout << "  node " << id << " @ " << info.addr << std::endl;
+                }
             }
         }
 };
