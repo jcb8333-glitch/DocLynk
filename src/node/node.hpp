@@ -1,61 +1,239 @@
 #pragma once
 // Posix socket programming
+#include <atomic>
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <future>
 #include <thread>
+#include <unordered_map>
+#include <optional>
+#include <vector>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <unistd.h>
+#include <array>
 // Serialization
 #include <cereal/archives/binary.hpp>
 #include <cereal/types/string.hpp>
 #include <cereal/types/vector.hpp>
+// Hashing
+#include "../hash/sha1.hpp"
+
 #include <sstream>
 // General imports
 #include <string>
 
-#include <vector>
-#include "config.h"
 // Debugging
 #include <iostream>
+#include "../net/proto.hpp"
 
-// Store data on adjacent nodes in network
-struct neighbor {
-    std::string target_addr;
-    uint32_t weight;
+class PeerConn {
+    public:
+        int sockfd;
+        std::string peerAddr;
+        std::thread reader;
+        std::atomic<bool> alive{true};
+        std::mutex sendMutex;
+        std::mutex pendingMutex;
+        std::unordered_map<uint64_t, std::promise<Packet>> pending; 
 
-    template <class Archive>
-    void serialize(Archive& ar){
-        ar(target_addr, weight);
-    }
+        PeerConn(int fd, std::string addr) : sockfd(fd), peerAddr(std::move(addr)){}
+
+        ~PeerConn(){
+            alive = false;
+            shutdown(sockfd, SHUT_RDWR);
+            close(sockfd);
+            if (reader.joinable()) reader.join();
+        }
 };
-struct nInf{
-            std::string addr;
-            std::string targetAddr;
-            std::string secret;
-            std::vector<neighbor> connections;
-
-            template <class Archive>
-            void serialize(Archive& ar){
-                ar(addr, targetAddr, secret, connections);
-            }
-        };
 
 // Contains network logic and data on a node
 class Node{
     private:
         const char* addr_;
         const char* targetAddr_;
+        const uint64_t id_;
         std::promise<void> sReady_;
         std::shared_future<void> sReadyFuture_;
         std::thread servThread;
         std::thread cliThread;
-        std::string secret_ = "Im trapped in a for loop";  
-        std::vector<neighbor> connections_;
-        // Struct for serialization
+        nInf successor_;
+        nInf predecessor_;
+        std::mutex succMutex_;
+        std::mutex predMutex_;
+        std::thread stabilizeThread;
+        std::atomic<bool> running_{true};
+        std::array<RouteEntry, 64> routeTable_;
+        std::vector<nInf> successorList_;
+        int fingerIdx_ = 0;
         struct nInf nodeInfo;
+        std::atomic<uint64_t> nextRequestID{1};
+        std::mutex poolMutex;
+        std::unordered_map<std::string, std::shared_ptr<PeerConn>> connectionPool;
+
+        nInf remoteFindSuccessor(std::shared_ptr<PeerConn> conn, uint64_t chordID){
+            Packet req{MsgType::FindSuccReq, nextRequestID++, chordID, nodeInfo};
+            auto res = remoteCall(conn, req);
+            return res ? res->payload : nInf{};
+        }
+        nInf remoteFindPredecessor(std::shared_ptr<PeerConn> conn){
+            Packet req{MsgType::GetPredReq, nextRequestID++, 0, nodeInfo};
+            auto res = remoteCall(conn, req);
+            return res ? res->payload : nInf{};
+        }
+
+        // Loop to read incoming packets
+        void readLoop(std::shared_ptr<PeerConn> conn){
+            while (conn->alive){
+                Packet packet;
+                if (recvPacket(conn->sockfd, packet) < 0){
+                    conn->alive = false;
+                    break;
+                }
+
+                switch (packet.type){
+                    case MsgType::Ping:{
+                        Packet res{MsgType::Pong, packet.packetID, packet.chordID, nodeInfo};
+                        sendPacket(conn->sockfd, res);
+                        break;
+                    }
+                    default:{
+                        break;
+                    }
+                }
+                if ( packet.type == MsgType::FindSuccRes ||  packet.type == MsgType::GetPredRes ||  packet.type == MsgType::Pong){
+                    std::lock_guard<std::mutex> lock(conn->pendingMutex);
+                    auto it = conn->pending.find(packet.packetID);
+                    if(it != conn->pending.end()){
+                        it->second.set_value(packet);
+                        conn->pending.erase(it);
+                    }
+                } else {
+                    handleConnection(conn->sockfd, packet);
+                }
+
+            }
+        }
+
+        bool inRange(uint64_t id, uint64_t src, uint64_t dst, bool inclusive=false){
+            if (src < dst){
+                return inclusive ? (id > src && id <= dst) : (id > src && id < dst);
+            } else {
+                return inclusive ? (id > src || id <= dst) : (id > src || id < dst);
+            }
+        }
+
+        void stabilize(){
+            nInf succ;
+            {
+                std::lock_guard<std::mutex> lock(succMutex_);
+                succ = successor_;
+            }
+            if (isUnset(succ)) return;
+
+            auto conn = getOrConnect(succ.addr);
+            if (!conn) return;
+
+            nInf x = remoteFindPredecessor(conn);
+            if(!isUnset(x) && inRange(x.id, id_, succ.id)){
+                std::lock_guard<std::mutex> lock(succMutex_);
+                successor_ = x;
+                succ = x;
+            }
+
+            auto succConn = getOrConnect(succ.addr);
+            if (succConn){
+                Packet req{MsgType::NotifyReq, nextRequestID++, 0, nodeInfo};
+                std::lock_guard<std::mutex> lock(succConn->sendMutex);
+                sendPacket(succConn->sockfd, req);
+            }
+
+        }
+
+        void notify(nInf candidate){
+            std::lock_guard<std::mutex> lock(predMutex_);
+            if(isUnset(predecessor_) || inRange(candidate.id, predecessor_.id, id_)){
+                predecessor_ = candidate;
+            }
+        }
+
+        void updateRtTable(){
+            fingerIdx_ = (fingerIdx_ % 64) + 1;
+            uint64_t start = id_ + (1ULL << (fingerIdx_ - 1));
+            nInf owner = findSuccessor(start);
+            routeTable_[fingerIdx_ - 1] = {start, owner.id, owner.addr};
+        }
+
+        void checkPredecessor(){
+            nInf pred;
+            {
+                std::lock_guard<std::mutex> lock(predMutex_);
+                pred = predecessor_;
+            }
+            if (isUnset(pred)) return;
+
+            auto conn = getOrConnect(pred.addr);
+            if(!conn){
+                std::lock_guard<std::mutex> lock(predMutex_);
+                predecessor_ = nInf{};
+                return;
+            }
+
+            Packet req{MsgType::Ping, nextRequestID++, 0, nodeInfo};
+            auto res = remoteCall(conn, req);
+            if(!res){
+                std::lock_guard<std::mutex> lock(predMutex_);
+                predecessor_ = nInf{};
+            }
+        }
+
+        bool isUnset(const nInf& node){return node.addr.empty();}
+
+        nInf closestPrecedingNode(uint64_t id){
+            for (int i = 63; i >= 0; --i){
+                if (routeTable_[i].nodeID != 0 && inRange(routeTable_[i].nodeID, id_, id)){
+                    nInf n;
+                    n.id = routeTable_[i].nodeID;
+                    n.addr = routeTable_[i].addr;
+                    return n;
+                }
+            }
+            nInf self;
+            self.id = id_;
+            self.addr = addr_;
+            return self;
+        }
+
+        std::shared_ptr<PeerConn> getOrConnect(const std::string& peerAddr){
+            {
+                std::lock_guard<std::mutex> lock(poolMutex);
+                auto it = connectionPool.find(peerAddr);
+                if (it != connectionPool.end() && it->second->alive) return it->second;
+            }
+
+            int sockfd = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
+            if(sockfd < 0) return nullptr;
+
+            struct sockaddr_in addr{};
+            addr.sin_family = AF_INET;
+            addr.sin_port = htons(8570);
+            inet_pton(AF_INET, peerAddr.c_str(), &addr.sin_addr);
+
+            if(connect(sockfd, (struct sockaddr*)&addr, sizeof(addr)) < 0){
+                close(sockfd);
+                return nullptr;
+            }
+
+            auto conn = std::make_shared<PeerConn>(sockfd, peerAddr);
+            conn->reader = std::thread(&Node::readLoop, this, conn);
+
+            std::lock_guard<std::mutex> lock(poolMutex);
+            connectionPool[peerAddr] = conn;
+            return conn;
+        }
 
         // Server function to be executed by thread to accept connections
         int serv_sock(){
@@ -91,107 +269,86 @@ class Node{
                 int connfd = accept(sockfd, NULL, NULL);
                 if (connfd == -1){
                     perror("Connection refused on server socket");
-                    close(sockfd);
-                    return EXIT_FAILURE;
+                    continue;
                 }
 
-                // Connection logic
-                nInf incoming;
-                if(recvNode(connfd, incoming) < 0){
-                    perror("Server thread failed to receive serialized node");
-                    return EXIT_FAILURE;
-                } else {
-                    std::cout << incoming.secret << std::endl;
-                }
-
-
-                if(shutdown(connfd, SHUT_RDWR) == -1){
-                    perror("Failed to shutdown server connection");
-                    close(sockfd);
-                    close(connfd);
-                    return EXIT_FAILURE;
-                }
-                close(connfd);
+                auto conn = std::make_shared<PeerConn>(connfd, "N/A");
+                conn->reader = std::thread(&Node::readLoop, this, conn);
+                conn->reader.detach();
             }
         }
 
         // Client function to be executed by a thread to connect to other nodes
         int cli_sock(){
             if (std::strcmp(targetAddr_, addr_) == 0){
-                perror("Client thread refusing to connect to self");
                 return EXIT_FAILURE;
             }
             sReadyFuture_.wait();
-            int sockfd = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
-            if (sockfd < 0){
-                perror("Failed to create client socket");
+
+            auto conn = getOrConnect(targetAddr_);
+            if (!conn){
+                perror("Client failed to establish connection to boot node");
                 return EXIT_FAILURE;
             }
 
-            struct sockaddr_in socketAddress;
-            socketAddress.sin_family = AF_INET;
-            socketAddress.sin_port = htons(8570);
-
-            int res = inet_pton(AF_INET, targetAddr_, &socketAddress.sin_addr);
-
-            if(connect(sockfd, (struct sockaddr*)&socketAddress, sizeof(socketAddress)) < 0){
-                perror("Client failed to establish connection");
-                close(sockfd);
+            nInf succ = remoteFindSuccessor(conn, id_);
+            if(isUnset(succ)){
+                perror("Join failed: boot node did not return a valid successor");
                 return EXIT_FAILURE;
             }
-
-            // Connection logic
-            char buffer[1024] = {0};
-
-            if(sendNode(sockfd, nodeInfo) < 0){
-                perror("Client thread failed to serialize node");
-                close(sockfd);
-                return EXIT_FAILURE;
+            {
+                std::lock_guard<std::mutex> lock(succMutex_);
+                successor_ = succ;
             }
-
-            close(sockfd);
             return EXIT_SUCCESS;
         }
 
-    protected:
-        // Send data on self over connection for network discovery
-        int sendNode(int sockfd, nInf& node){
-            std::stringstream ss;
+        std::optional<Packet> remoteCall(std::shared_ptr<PeerConn> conn, Packet req){
+        uint64_t reqID = req.packetID;
+            std::promise<Packet> resPromise;
+            std::future<Packet> resFuture = resPromise.get_future();
             {
-                cereal::BinaryOutputArchive archive(ss);
-                archive(node);
+                std::lock_guard<std::mutex> lock(conn->pendingMutex);
+                conn->pending[reqID] = std::move(resPromise);
             }
-            std::string payload = ss.str();
-            uint32_t len = htonl(static_cast<uint32_t>(payload.size()));
-            if (send(sockfd, &len, sizeof(len), 0) != sizeof(len)) return -1;
-            if (send(sockfd, payload.data(), payload.size(), 0) != (ssize_t)payload.size()) return -2;
-            return 0;
+            {
+                std::lock_guard<std::mutex> lock(conn->sendMutex);
+                if(sendPacket(conn->sockfd, req) < 0){
+                    std::lock_guard<std::mutex> lock2(conn->pendingMutex);
+                    conn->pending.erase(reqID);
+                    return std::nullopt;
+                }
+            }
+            auto status = resFuture.wait_for(std::chrono::seconds(5));
+            if(status != std::future_status::ready){
+                std::lock_guard<std::mutex> lock(conn->pendingMutex);
+                conn->pending.erase(reqID);
+                return std::nullopt;
+            }
+            return resFuture.get();
         }
-        // Receive serialized node
-        int recvNode(int sockfd, nInf& node){
-            uint32_t len;
-            if(recv(sockfd, &len, sizeof(len), MSG_WAITALL) != sizeof(len)) return -1;
-            len = ntohl(len);
-            std::string payload(len, '\0');
-            if (recv(sockfd, payload.data(), len, MSG_WAITALL) != (ssize_t)len) return -2;
-            std::stringstream ss(payload);
-            cereal::BinaryInputArchive archive(ss);
-            archive(node);
-            return 0;
-        }
+
     public:
 
         // Constructor: Start server and client threads on construction
         Node(const char* selfAddr, const char* bootAddr)
-            : addr_(selfAddr), targetAddr_(bootAddr)
+            : addr_(selfAddr), targetAddr_(bootAddr), id_(sha1Trunc(addr_))
         {
+
+            std::vector<RouteEntry> rt(routeTable_.begin(), routeTable_.end());
+            nodeInfo.id = id_;
             nodeInfo.addr = addr_;
             nodeInfo.targetAddr = targetAddr_;
-            nodeInfo.secret = secret_;
-            nodeInfo.connections = connections_;
+            nodeInfo.routeTable = rt;
+            nodeInfo.connections = {};
+
+            successor_ = nodeInfo;
+            successorList_.push_back(successor_);
+
             sReadyFuture_ = sReady_.get_future();
             servThread = std::thread(&Node::serv_sock, this);
             cliThread = std::thread(&Node::cli_sock, this);
+            stabilizeThread =std::thread(&Node::stabilizeLoop, this);
         }
 
         // End execution of both threads
@@ -200,9 +357,77 @@ class Node{
             if (cliThread.joinable()) cliThread.join();
         }
 
+        void stabilizeLoop(){
+            while(running_){
+                stabilize();
+                updateRtTable();
+                checkPredecessor();
+
+                nInf succ, pred;
+                {
+                    std::lock_guard<std::mutex> lock(succMutex_);
+                    succ = successor_;
+                }
+                {
+                    std::lock_guard<std::mutex> lock(predMutex_);
+                    pred = predecessor_;
+                }
+                std::cout << "[Node " << id_ << "] successor: "
+                    << (isUnset(succ) ? "none" : std::to_string(succ.id) + " (" + succ.addr + ")")
+                    << " | predecessor: "
+                    << (isUnset(pred) ? "none" : std::to_string(pred.id) + " (" + pred.addr + ")")
+                    << std::endl;
+
+                std::this_thread::sleep_for(std::chrono::seconds(1));
+            }
+        }
 
         // Destructor: Ends threads when node is destructed
-        ~Node(){
+        virtual ~Node(){
+            running_ = false;
             joinAll();
+            if (stabilizeThread.joinable()) stabilizeThread.join();
+        }
+
+        nInf findSuccessor(uint64_t id){
+            nInf succ;
+            {
+                std::lock_guard<std::mutex> lock(succMutex_);
+                succ = successor_;
+            }
+            if(inRange(id, id_, succ.id, true)){
+                return succ;
+            } else {
+                nInf n0 = closestPrecedingNode(id);
+                auto conn = getOrConnect(n0.addr);
+                if(!conn) return n0;
+                return remoteFindSuccessor(conn, id);
+            }
+        }
+
+        virtual void handleConnection(int sockfd, Packet& packet){
+            switch (packet.type){
+                case MsgType::FindSuccReq: {
+                    nInf res = findSuccessor(packet.chordID);
+                    Packet resp{MsgType::FindSuccRes, packet.packetID, packet.chordID, res};
+                    sendPacket(sockfd, resp);
+                    break;
+                }
+                case MsgType::GetPredReq: {
+                    nInf pred;
+                    {
+                        std::lock_guard<std::mutex> lock(predMutex_);
+                        pred = predecessor_;
+                    }
+                    Packet resp{MsgType::GetPredRes, packet.packetID, packet.chordID, pred};
+                    sendPacket(sockfd, resp);
+                    break;
+                }
+                case MsgType::NotifyReq:
+                    notify(packet.payload);
+                    break;
+                default:
+                    break;
+            }
         }
 };
