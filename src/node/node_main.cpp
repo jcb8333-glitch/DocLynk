@@ -1,4 +1,3 @@
-#include <cstring>
 #include "node.hpp"
 #include <iostream>
 

@@ -15,6 +15,11 @@ struct RouteEntry{
     uint64_t startID;
     uint64_t nodeID;
     std::string addr;
+
+    template <class Archive>
+    void serialize(Archive& ar){
+        ar(startID, nodeID, addr);
+    }
 };
 
 struct nInf{
@@ -26,7 +31,7 @@ struct nInf{
 
     template <class Archive>
     void serialize(Archive& ar){
-        ar(id, addr, targetAddr, routeTable connections);
+        ar(id, addr, targetAddr, routeTable, connections);
     }
 };
 
