@@ -58,6 +58,100 @@ Uses server and client thread to hold a connection and uses a stabilizer thread 
 connections on the network. 
 */
 class Node{
+    public:
+        // Constructor: Copies data to nInf struct and starts server, client, and stabilizer threads
+        Node(const char* selfAddr, const char* bootAddr)
+        : addr_(selfAddr), targetAddr_(bootAddr), id_(sha1Trunc(addr_))
+        {
+            std::vector<RouteEntry> rt(routeTable_.begin(), routeTable_.end());
+            nodeInfo.id = id_;
+            nodeInfo.addr = addr_;
+            nodeInfo.targetAddr = targetAddr_;
+            nodeInfo.routeTable = rt;
+            nodeInfo.connections = {};
+
+            successor_ = nodeInfo;
+            successorList_.push_back(successor_);
+
+            sReadyFuture_ = sReady_.get_future();
+            servThread = std::thread(&Node::serv_sock, this);
+            cliThread = std::thread(&Node::cli_sock, this);
+            stabilizeThread =std::thread(&Node::stabilizeLoop, this);
+        }
+
+        // Destructor: Sets a Node to no longer be running and joins all threads 
+        ~Node(){
+            running_ = false;
+            joinAll();
+        }
+
+        void stabilizeLoop(){
+            while(running_){
+                stabilize();
+                updateRtTable();
+                checkPredecessor();
+
+                nInf succ, pred;
+                {
+                    std::lock_guard<std::mutex> lock(succMutex_);
+                    succ = successor_;
+                }
+                {
+                    std::lock_guard<std::mutex> lock(predMutex_);
+                    pred = predecessor_;
+                }
+                std::cout << "[Node " << id_ << "] successor: "
+                    << (isUnset(succ) ? "none" : std::to_string(succ.id) + " (" + succ.addr + ")")
+                    << " | predecessor: "
+                    << (isUnset(pred) ? "none" : std::to_string(pred.id) + " (" + pred.addr + ")")
+                    << std::endl;
+
+                std::this_thread::sleep_for(std::chrono::seconds(1));
+            }
+        }
+
+        nInf findSuccessor(uint64_t id){
+            nInf succ;
+            {
+                std::lock_guard<std::mutex> lock(succMutex_);
+                succ = successor_;
+            }
+            if(inRange(id, id_, succ.id, true)){
+                return succ;
+            } else {
+                nInf n0 = closestPrecedingNode(id);
+                auto conn = getOrConnect(n0.addr);
+                if(!conn) return n0;
+                return remoteFindSuccessor(conn, id);
+            }
+        }
+
+        virtual void handleConnection(int sockfd, Packet& packet){
+            switch (packet.type){
+                case MsgType::FindSuccReq: {
+                    nInf res = findSuccessor(packet.chordID);
+                    Packet resp{MsgType::FindSuccRes, packet.packetID, packet.chordID, res};
+                    sendPacket(sockfd, resp);
+                    break;
+                }
+                case MsgType::GetPredReq: {
+                    nInf pred;
+                    {
+                        std::lock_guard<std::mutex> lock(predMutex_);
+                        pred = predecessor_;
+                    }
+                    Packet resp{MsgType::GetPredRes, packet.packetID, packet.chordID, pred};
+                    sendPacket(sockfd, resp);
+                    break;
+                }
+                case MsgType::NotifyReq:
+                    notify(packet.payload);
+                    break;
+                default:
+                    break;
+            }
+        }
+
     private:
         const char* addr_;
         const char* targetAddr_;
@@ -80,6 +174,13 @@ class Node{
         std::mutex poolMutex;
         std::unordered_map<std::string, std::shared_ptr<PeerConn>> connectionPool;
 
+        // Joins all threads if joinable. Used during Node destruction
+        void joinAll(){
+            if (servThread.joinable()) servThread.join();
+            if (cliThread.joinable()) cliThread.join();
+            if (stabilizeThread.joinable()) stabilizeThread.join();
+        }
+        
         nInf remoteFindSuccessor(std::shared_ptr<PeerConn> conn, uint64_t chordID){
             Packet req{MsgType::FindSuccReq, nextRequestID++, chordID, nodeInfo};
             auto res = remoteCall(conn, req);
@@ -332,108 +433,5 @@ class Node{
                 return std::nullopt;
             }
             return resFuture.get();
-        }
-
-    public:
-
-        // Constructor: Start server and client threads on construction
-        Node(const char* selfAddr, const char* bootAddr)
-            : addr_(selfAddr), targetAddr_(bootAddr), id_(sha1Trunc(addr_))
-        {
-
-            std::vector<RouteEntry> rt(routeTable_.begin(), routeTable_.end());
-            nodeInfo.id = id_;
-            nodeInfo.addr = addr_;
-            nodeInfo.targetAddr = targetAddr_;
-            nodeInfo.routeTable = rt;
-            nodeInfo.connections = {};
-
-            successor_ = nodeInfo;
-            successorList_.push_back(successor_);
-
-            sReadyFuture_ = sReady_.get_future();
-            servThread = std::thread(&Node::serv_sock, this);
-            cliThread = std::thread(&Node::cli_sock, this);
-            stabilizeThread =std::thread(&Node::stabilizeLoop, this);
-        }
-
-        // End execution of both threads
-        void joinAll(){
-            if (servThread.joinable()) servThread.join();
-            if (cliThread.joinable()) cliThread.join();
-        }
-
-        void stabilizeLoop(){
-            while(running_){
-                stabilize();
-                updateRtTable();
-                checkPredecessor();
-
-                nInf succ, pred;
-                {
-                    std::lock_guard<std::mutex> lock(succMutex_);
-                    succ = successor_;
-                }
-                {
-                    std::lock_guard<std::mutex> lock(predMutex_);
-                    pred = predecessor_;
-                }
-                std::cout << "[Node " << id_ << "] successor: "
-                    << (isUnset(succ) ? "none" : std::to_string(succ.id) + " (" + succ.addr + ")")
-                    << " | predecessor: "
-                    << (isUnset(pred) ? "none" : std::to_string(pred.id) + " (" + pred.addr + ")")
-                    << std::endl;
-
-                std::this_thread::sleep_for(std::chrono::seconds(1));
-            }
-        }
-
-        // Destructor: Ends threads when node is destructed
-        virtual ~Node(){
-            running_ = false;
-            joinAll();
-            if (stabilizeThread.joinable()) stabilizeThread.join();
-        }
-
-        nInf findSuccessor(uint64_t id){
-            nInf succ;
-            {
-                std::lock_guard<std::mutex> lock(succMutex_);
-                succ = successor_;
-            }
-            if(inRange(id, id_, succ.id, true)){
-                return succ;
-            } else {
-                nInf n0 = closestPrecedingNode(id);
-                auto conn = getOrConnect(n0.addr);
-                if(!conn) return n0;
-                return remoteFindSuccessor(conn, id);
-            }
-        }
-
-        virtual void handleConnection(int sockfd, Packet& packet){
-            switch (packet.type){
-                case MsgType::FindSuccReq: {
-                    nInf res = findSuccessor(packet.chordID);
-                    Packet resp{MsgType::FindSuccRes, packet.packetID, packet.chordID, res};
-                    sendPacket(sockfd, resp);
-                    break;
-                }
-                case MsgType::GetPredReq: {
-                    nInf pred;
-                    {
-                        std::lock_guard<std::mutex> lock(predMutex_);
-                        pred = predecessor_;
-                    }
-                    Packet resp{MsgType::GetPredRes, packet.packetID, packet.chordID, pred};
-                    sendPacket(sockfd, resp);
-                    break;
-                }
-                case MsgType::NotifyReq:
-                    notify(packet.payload);
-                    break;
-                default:
-                    break;
-            }
         }
 };
