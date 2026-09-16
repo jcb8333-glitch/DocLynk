@@ -85,6 +85,7 @@ class Node{
             joinAll();
         }
 
+        // Calls functions to check integrity and stabilize the node's network connection while the node is running
         void stabilizeLoop(){
             while(running_){
                 stabilize();
@@ -110,6 +111,57 @@ class Node{
             }
         }
 
+    private:
+        // Node data
+        const char* addr_;
+        const char* targetAddr_;
+        const uint64_t id_;
+        int fingerIdx_ = 0;
+        struct nInf nodeInfo;
+        nInf successor_;
+        nInf predecessor_;
+        std::vector<nInf> successorList_;
+        std::array<RouteEntry, 64> routeTable_;
+        std::unordered_map<std::string, std::shared_ptr<PeerConn>> connectionPool;
+        // Concurrency objects
+        std::promise<void> sReady_;
+        std::shared_future<void> sReadyFuture_;
+        std::thread servThread;
+        std::thread cliThread;
+        std::thread stabilizeThread;
+        std::mutex succMutex_;
+        std::mutex predMutex_;
+        std::mutex poolMutex;
+        std::atomic<bool> running_{true};
+        std::atomic<uint64_t> nextRequestID{1};
+
+        // Joins all threads if joinable. Used during Node destruction
+        void joinAll(){
+            if (servThread.joinable()) servThread.join();
+            if (cliThread.joinable()) cliThread.join();
+            if (stabilizeThread.joinable()) stabilizeThread.join();
+        }
+
+        // Searches range to return the nearest predecessor connected to a node.
+        // If the predecessor is not found inside of the range the nearest predecessor
+        // defaults to itself.
+        nInf closestPrecedingNode(uint64_t id){
+            for (int i = 63; i >= 0; --i){
+                if (routeTable_[i].nodeID != 0 && inRange(routeTable_[i].nodeID, id_, id)){
+                    nInf n;
+                    n.id = routeTable_[i].nodeID;
+                    n.addr = routeTable_[i].addr;
+                    return n;
+                }
+            }
+            nInf self;
+            self.id = id_;
+            self.addr = addr_;
+            return self;
+        }
+
+        // Returns the successor of a node via an id if the successor is in the node's range
+        // otherwise attempts to find a predecessor with a valid successor in the range.
         nInf findSuccessor(uint64_t id){
             nInf succ;
             {
@@ -126,73 +178,52 @@ class Node{
             }
         }
 
-        virtual void handleConnection(int sockfd, Packet& packet){
-            switch (packet.type){
-                case MsgType::FindSuccReq: {
-                    nInf res = findSuccessor(packet.chordID);
-                    Packet resp{MsgType::FindSuccRes, packet.packetID, packet.chordID, res};
-                    sendPacket(sockfd, resp);
-                    break;
-                }
-                case MsgType::GetPredReq: {
-                    nInf pred;
-                    {
-                        std::lock_guard<std::mutex> lock(predMutex_);
-                        pred = predecessor_;
-                    }
-                    Packet resp{MsgType::GetPredRes, packet.packetID, packet.chordID, pred};
-                    sendPacket(sockfd, resp);
-                    break;
-                }
-                case MsgType::NotifyReq:
-                    notify(packet.payload);
-                    break;
-                default:
-                    break;
+        // Requests a remote node to call its local variant of a function and reply with a response.
+        std::optional<Packet> remoteCall(std::shared_ptr<PeerConn> conn, Packet req){
+        uint64_t reqID = req.packetID;
+            std::promise<Packet> resPromise;
+            std::future<Packet> resFuture = resPromise.get_future();
+            {
+                std::lock_guard<std::mutex> lock(conn->pendingMutex);
+                conn->pending[reqID] = std::move(resPromise);
             }
+            {
+                std::lock_guard<std::mutex> lock(conn->sendMutex);
+                if(sendPacket(conn->sockfd, req) < 0){
+                    std::lock_guard<std::mutex> lock2(conn->pendingMutex);
+                    conn->pending.erase(reqID);
+                    return std::nullopt;
+                }
+            }
+            auto status = resFuture.wait_for(std::chrono::seconds(5));
+            if(status != std::future_status::ready){
+                std::lock_guard<std::mutex> lock(conn->pendingMutex);
+                conn->pending.erase(reqID);
+                return std::nullopt;
+            }
+            return resFuture.get();
         }
 
-    private:
-        const char* addr_;
-        const char* targetAddr_;
-        const uint64_t id_;
-        std::promise<void> sReady_;
-        std::shared_future<void> sReadyFuture_;
-        std::thread servThread;
-        std::thread cliThread;
-        nInf successor_;
-        nInf predecessor_;
-        std::mutex succMutex_;
-        std::mutex predMutex_;
-        std::thread stabilizeThread;
-        std::atomic<bool> running_{true};
-        std::array<RouteEntry, 64> routeTable_;
-        std::vector<nInf> successorList_;
-        int fingerIdx_ = 0;
-        struct nInf nodeInfo;
-        std::atomic<uint64_t> nextRequestID{1};
-        std::mutex poolMutex;
-        std::unordered_map<std::string, std::shared_ptr<PeerConn>> connectionPool;
-
-        // Joins all threads if joinable. Used during Node destruction
-        void joinAll(){
-            if (servThread.joinable()) servThread.join();
-            if (cliThread.joinable()) cliThread.join();
-            if (stabilizeThread.joinable()) stabilizeThread.join();
-        }
-        
+        /*
+        RPC variants of other network functions.
+        Construct a packet to get sent to another node to perform an operation
+        rather than the local node performing that operation.
+        */
+        // Returns the successor of the a node via its chordID
         nInf remoteFindSuccessor(std::shared_ptr<PeerConn> conn, uint64_t chordID){
             Packet req{MsgType::FindSuccReq, nextRequestID++, chordID, nodeInfo};
             auto res = remoteCall(conn, req);
             return res ? res->payload : nInf{};
         }
+        // Returns the predecessor belonging to the other node on the connection
         nInf remoteFindPredecessor(std::shared_ptr<PeerConn> conn){
             Packet req{MsgType::GetPredReq, nextRequestID++, 0, nodeInfo};
             auto res = remoteCall(conn, req);
             return res ? res->payload : nInf{};
         }
 
-        // Loop to read incoming packets
+        // Gets passed into reader thread to read incoming packets while
+        // connection is alive.
         void readLoop(std::shared_ptr<PeerConn> conn){
             while (conn->alive){
                 Packet packet;
@@ -225,6 +256,11 @@ class Node{
             }
         }
 
+        /*
+        The following series of functions handle P2P node connection and stabilization.
+        P2P helpers are also included in this list.
+        */
+        // Checks if a node fits into the range between two nodes
         bool inRange(uint64_t id, uint64_t src, uint64_t dst, bool inclusive=false){
             if (src < dst){
                 return inclusive ? (id > src && id <= dst) : (id > src && id < dst);
@@ -233,6 +269,11 @@ class Node{
             }
         }
 
+        // Checks if a node is dead by looking at the address
+        bool isUnset(const nInf& node){return node.addr.empty();}
+
+        // Changes the predecessor and successor to new nodes if either is found to be unset.
+        // Creates a connection between new predecessor or successor.
         void stabilize(){
             nInf succ;
             {
@@ -260,6 +301,7 @@ class Node{
 
         }
 
+        // Notifies the network that a new node is looking for a place on the network
         void notify(nInf candidate){
             std::lock_guard<std::mutex> lock(predMutex_);
             if(isUnset(predecessor_) || inRange(candidate.id, predecessor_.id, id_)){
@@ -267,6 +309,7 @@ class Node{
             }
         }
 
+        // Updates the finger table with up to date route entries
         void updateRtTable(){
             fingerIdx_ = (fingerIdx_ % 64) + 1;
             uint64_t start = id_ + (1ULL << (fingerIdx_ - 1));
@@ -274,6 +317,7 @@ class Node{
             routeTable_[fingerIdx_ - 1] = {start, owner.id, owner.addr};
         }
 
+        // Checks if the predecessor is set to prevent dead nodes from remaining on the network.
         void checkPredecessor(){
             nInf pred;
             {
@@ -297,23 +341,36 @@ class Node{
             }
         }
 
-        bool isUnset(const nInf& node){return node.addr.empty();}
-
-        nInf closestPrecedingNode(uint64_t id){
-            for (int i = 63; i >= 0; --i){
-                if (routeTable_[i].nodeID != 0 && inRange(routeTable_[i].nodeID, id_, id)){
-                    nInf n;
-                    n.id = routeTable_[i].nodeID;
-                    n.addr = routeTable_[i].addr;
-                    return n;
+        // Filters request packets to perfom proper operation and send back with a response packet
+        virtual void handleConnection(int sockfd, Packet& packet){
+            switch (packet.type){
+                case MsgType::FindSuccReq: {
+                    nInf res = findSuccessor(packet.chordID);
+                    Packet resp{MsgType::FindSuccRes, packet.packetID, packet.chordID, res};
+                    sendPacket(sockfd, resp);
+                    break;
                 }
+                case MsgType::GetPredReq: {
+                    nInf pred;
+                    {
+                        std::lock_guard<std::mutex> lock(predMutex_);
+                        pred = predecessor_;
+                    }
+                    Packet resp{MsgType::GetPredRes, packet.packetID, packet.chordID, pred};
+                    sendPacket(sockfd, resp);
+                    break;
+                }
+                case MsgType::NotifyReq:
+                    notify(packet.payload);
+                    break;
+                default:
+                    break;
             }
-            nInf self;
-            self.id = id_;
-            self.addr = addr_;
-            return self;
         }
 
+        // Establishes a connection to a node with a specifed address if
+        // a connection can't be found in a node's connection pool with associated peer address,
+        // otherwise return connection associated with the peer address.
         std::shared_ptr<PeerConn> getOrConnect(const std::string& peerAddr){
             {
                 std::lock_guard<std::mutex> lock(poolMutex);
@@ -342,7 +399,10 @@ class Node{
             return conn;
         }
 
-        // Server function to be executed by thread to accept connections
+        // Contains logic for the server thread on a node.
+        // Creates a socket listening for incoming TCP connections.
+        // On connection a new socket is made with the closed connection
+        // and a reader thread is created to read on this end of the connection
         int serv_sock(){
             int sockfd = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
             if(sockfd < 0){
@@ -352,9 +412,9 @@ class Node{
             }
 
             struct sockaddr_in socketAddress;
-            socketAddress.sin_family  = AF_INET; // Address family
-            socketAddress.sin_port = htons(8570); // Port number
-            socketAddress.sin_addr.s_addr = htonl(INADDR_ANY); // Socket address (0.0.0.0, Any IPv4 address can connect)
+            socketAddress.sin_family  = AF_INET;
+            socketAddress.sin_port = htons(8570);
+            socketAddress.sin_addr.s_addr = htonl(INADDR_ANY);
 
             if(bind(sockfd, (struct sockaddr*)&socketAddress, sizeof(socketAddress)) < 0){
                 perror("Failed to bind server socket to address");
@@ -385,7 +445,9 @@ class Node{
             }
         }
 
-        // Client function to be executed by a thread to connect to other nodes
+        // Contains logic for the client thread on a node.
+        // Calls getOrConnect to attempt to create a connection to the node linked to
+        // targetAddr_. 
         int cli_sock(){
             if (std::strcmp(targetAddr_, addr_) == 0){
                 return EXIT_FAILURE;
@@ -394,13 +456,13 @@ class Node{
 
             auto conn = getOrConnect(targetAddr_);
             if (!conn){
-                perror("Client failed to establish connection to boot node");
+                perror("Client failed to establish connection to node");
                 return EXIT_FAILURE;
             }
 
             nInf succ = remoteFindSuccessor(conn, id_);
             if(isUnset(succ)){
-                perror("Join failed: boot node did not return a valid successor");
+                perror("Join failed: Node did not return a valid successor");
                 return EXIT_FAILURE;
             }
             {
@@ -408,30 +470,5 @@ class Node{
                 successor_ = succ;
             }
             return EXIT_SUCCESS;
-        }
-
-        std::optional<Packet> remoteCall(std::shared_ptr<PeerConn> conn, Packet req){
-        uint64_t reqID = req.packetID;
-            std::promise<Packet> resPromise;
-            std::future<Packet> resFuture = resPromise.get_future();
-            {
-                std::lock_guard<std::mutex> lock(conn->pendingMutex);
-                conn->pending[reqID] = std::move(resPromise);
-            }
-            {
-                std::lock_guard<std::mutex> lock(conn->sendMutex);
-                if(sendPacket(conn->sockfd, req) < 0){
-                    std::lock_guard<std::mutex> lock2(conn->pendingMutex);
-                    conn->pending.erase(reqID);
-                    return std::nullopt;
-                }
-            }
-            auto status = resFuture.wait_for(std::chrono::seconds(5));
-            if(status != std::future_status::ready){
-                std::lock_guard<std::mutex> lock(conn->pendingMutex);
-                conn->pending.erase(reqID);
-                return std::nullopt;
-            }
-            return resFuture.get();
         }
 };
