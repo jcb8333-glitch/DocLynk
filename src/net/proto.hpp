@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 
+// Stores values for the type of message in a packet.
 enum class MsgType : uint8_t {
     GetPredReq = 0, GetPredRes = 1,
     NotifyReq = 2, NotifyRes = 3,
@@ -11,6 +12,8 @@ enum class MsgType : uint8_t {
     Ping = 4, Pong = 5
 };
 
+// Stores data in a node's routing table.
+// ID of the starting node, ID of the destination, the address of the destination.
 struct RouteEntry{
     uint64_t startID;
     uint64_t nodeID;
@@ -22,6 +25,8 @@ struct RouteEntry{
     }
 };
 
+// Struct to hold node data to be serialized and sent over a connection.
+// Prevents threads and functions from being sent
 struct nInf{
     uint64_t id;
     std::string addr;
@@ -35,6 +40,9 @@ struct nInf{
     }
 };
 
+// Packet inserted into the payload of a TCP segment.
+// Contains message type for correct handling, an ID to connect a response packet to a request,
+// the chord ID of the destination node, and a payload containing needed node data
 struct Packet {
     MsgType type;
     uint64_t packetID;
@@ -47,6 +55,7 @@ struct Packet {
     }
 };
 
+// Serializes a packet and its contents into binary to be sent over a socket.
 int sendPacket(int sockfd, Packet& packet){
     std::stringstream ss;
     {
@@ -60,6 +69,7 @@ int sendPacket(int sockfd, Packet& packet){
     return 0;
 }
 
+// De-serializes a packet and its contents that was received over a socket.
 int recvPacket(int sockfd, Packet& packet){
     uint32_t len;
     if(recv(sockfd, &len, sizeof(len), MSG_WAITALL) != sizeof(len)) return -1;
