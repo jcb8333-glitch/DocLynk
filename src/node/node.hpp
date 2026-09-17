@@ -85,6 +85,13 @@ class Node{
             joinAll();
         }
 
+        // Joins all threads if joinable. Used during Node destruction
+        void joinAll(){
+            if (servThread.joinable()) servThread.join();
+            if (cliThread.joinable()) cliThread.join();
+            if (stabilizeThread.joinable()) stabilizeThread.join();
+        }
+
         // Calls functions to check integrity and stabilize the node's network connection while the node is running
         void stabilizeLoop(){
             while(running_){
@@ -134,13 +141,6 @@ class Node{
         std::mutex poolMutex;
         std::atomic<bool> running_{true};
         std::atomic<uint64_t> nextRequestID{1};
-
-        // Joins all threads if joinable. Used during Node destruction
-        void joinAll(){
-            if (servThread.joinable()) servThread.join();
-            if (cliThread.joinable()) cliThread.join();
-            if (stabilizeThread.joinable()) stabilizeThread.join();
-        }
 
         // Searches range to return the nearest predecessor connected to a node.
         // If the predecessor is not found inside of the range the nearest predecessor
