@@ -1,4 +1,4 @@
-#include "bootnode.hpp"
+#include <bootnode.h>
 
 int main(int argc, char* argv[]){
     const char* selfAddr = nullptr;
