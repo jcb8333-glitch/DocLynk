@@ -1,6 +1,6 @@
 #pragma once
 
-#include "node.hpp"
+#include <node.h>
 #include <queue>
 
 class BootNode : public Node {

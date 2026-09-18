@@ -1,4 +1,4 @@
-#include "node.hpp"
+#include <node.h>
 
 int main(int argc, char* argv[]){
     const char* selfAddr = nullptr;
