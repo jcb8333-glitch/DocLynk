@@ -7,6 +7,30 @@
 #include <optional>
 #include <span>
 #include <cassert>
+#include <algorithm>
+#include <compare>
+
+const signed char p_util_hexdigit[256] =
+{ -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+  -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+  -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+  0,1,2,3,4,5,6,7,8,9,-1,-1,-1,-1,-1,-1,
+  -1,0xa,0xb,0xc,0xd,0xe,0xf,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+  -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+  -1,0xa,0xb,0xc,0xd,0xe,0xf,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+  -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+  -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+  -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+  -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+  -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+  -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+  -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+  -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+  -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1, };
+
+inline signed char HexDigit(char c){
+    return p_util_hexdigit[(unsigned char)c];
+}
 
 namespace util {
     [[nodiscard]] inline std::string_view RemovePrefixView(std::string_view str, std::string_view prefix){
@@ -17,39 +41,70 @@ namespace util {
     }
 }
 
-template <unsigned int BITS>
 class buffer256 {
     public:
-        constexpr buffer256() : b_data {}
+        constexpr buffer256() : b_data{} {}
         constexpr explicit buffer256(uint8_t v) : b_data{v}{}
         constexpr explicit buffer256(std::span<const unsigned char> vch){
             assert(vch.size() == WIDTH);
             std::copy(vch.begin(), vch.end(), b_data.begin());
         }
-        consteval explicit buffer256(std::string_view hex_str);
+        consteval buffer256(std::string_view hex_str) : b_data{}{
+            assert(hex_str.size() == WIDTH * 2);
+            for (int i = 0; i < WIDTH; ++i){
+                signed char hi = HexDigit(hex_str[i * 2]);
+                signed char lo = HexDigit(hex_str[i * 2 + 1]);
+                assert(hi >= 0 && lo >= 0);
+                b_data[WIDTH - 1 - i] = static_cast<uint8_t>((hi << 4) | lo);
+            }
+        }
         constexpr bool isNull() const{
             return std::all_of(b_data.begin(), b_data.end(), [](uint8_t val){return val == 0;});
         }
         constexpr void setNull(){
             std::fill(b_data.begin(), b_data.end(), 0);
         }
-        constexpr bool operator==(const buffer256&) const default;
-        constexpr std::strong_ordering operator<=>(const buffer256 other) const = default;
+        constexpr bool operator==(const buffer256&) const  = default;
+        constexpr std::strong_ordering operator<=>(const buffer256&) const = default;
+
+        static constexpr size_t size() { return WIDTH; }
+        unsigned char* begin() { return b_data.data(); }
+        unsigned char* end() { return b_data.data() + WIDTH; }
+        const unsigned char* begin() const { return b_data.data(); }
+        const unsigned char* end() const { return b_data.data() + WIDTH; }
+
         std::string GetHex() const;
         std::string ToString() const;
 
     protected:
-        static constexpr int WIDTH = BITS / 8;
+        static constexpr int WIDTH = 32;
         std::array<uint8_t, WIDTH> b_data;
-        static_assert(WIDTH == sizeof(b_data, "Sanity check"));
+        static_assert(WIDTH == sizeof(b_data), "Sanity check");
 };
 
 template <class uintN_t>
 std::optional<uintN_t> FromHex(std::string_view str);
-std::string HexStr(const std::span<const uint8_t> s);
-// std::string GetHex() const;
+inline std::string HexStr(const std::span<const uint8_t> s){
+    std::string rv(s.size() * 2, '\0');
+    static constexpr char hexmap[] = "0123456789abcdef";
+    char* p = rv.data();
+    for (uint8_t v : s){
+        *p++ = hexmap[v >> 4];
+        *p++ = hexmap[v & 0xf];
+    }
+    return rv;
+}
 
 namespace detail {
+
+    inline bool IsHex(std::string_view str)
+    {
+        for (char c : str) {
+            if (HexDigit(c) < 0) return false;
+        }
+        return (str.size() > 0) && (str.size()%2 == 0);
+    }
+
     template <class uintN_t>
     std::optional<uintN_t> FromHex(std::string_view str)
     {
@@ -82,7 +137,7 @@ namespace detail {
     }
 }
 
-class uint256 : public buffer256<256> {
+class uint256 : public buffer256 {
     public:
         static std::optional<uint256> FromHex(std::string_view str){
             return detail::FromHex<uint256>(str);
@@ -91,15 +146,14 @@ class uint256 : public buffer256<256> {
             return detail::FromUserHex<uint256>(str);
         }
         constexpr uint256() = default;
-        consteval explicit uint256(std::string_view hex_str) : buffer256<256>(hex_str){}
-        constexpr explicit uint256(uint8_t v) : buffer256<256>(v){}
-        constexpr explicit uint256(std::span<const unsigned char> vch) : buffer256<256>(vch){}
+        consteval explicit uint256(std::string_view hex_str) : buffer256(hex_str){}
+        constexpr explicit uint256(uint8_t v) : buffer256(v){}
+        constexpr explicit uint256(std::span<const unsigned char> vch) : buffer256(vch){}
         static const uint256 ZERO;
         static const uint256 ONE;
 };
-// ref
-template <unsigned int BITS>
-std::string buffer256<BITS>::GetHex() const{
+
+inline std::string buffer256::GetHex() const{
     uint8_t b_data_rev[WIDTH];
     for(int i = 0; i < WIDTH; ++i){
         b_data_rev[i] = b_data[WIDTH - i - 1];
@@ -107,8 +161,8 @@ std::string buffer256<BITS>::GetHex() const{
     return HexStr(b_data_rev);
 }
 
-template std::string buffer256<256>::GetHex() const;
-template std::string buffer256<256>::ToString() const;
-const uint256 uint256::ZERO(0);
-const uint256 uint256::ONE(1);
-// fin
+inline std::string buffer256::ToString() const {
+    return GetHex();
+}
+inline const uint256 uint256::ZERO(0);
+inline const uint256 uint256::ONE(1);
