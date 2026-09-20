@@ -10,23 +10,16 @@
 #include <algorithm>
 #include <compare>
 
-const signed char p_util_hexdigit[256] =
-{ -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
-  -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
-  -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
-  0,1,2,3,4,5,6,7,8,9,-1,-1,-1,-1,-1,-1,
-  -1,0xa,0xb,0xc,0xd,0xe,0xf,-1,-1,-1,-1,-1,-1,-1,-1,-1,
-  -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
-  -1,0xa,0xb,0xc,0xd,0xe,0xf,-1,-1,-1,-1,-1,-1,-1,-1,-1,
-  -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
-  -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
-  -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
-  -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
-  -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
-  -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
-  -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
-  -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
-  -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1, };
+constexpr std::array<signed char, 256> MakeHexDigitTable(){
+    std::array<signed char, 256> table{};
+    for(auto& v : table) v = -1;
+    for(char c = '0'; c <= '9'; ++c) table[(unsigned char)c] = c - '0';
+    for(char c = 'a'; c <= 'f'; ++c) table[(unsigned char)c] = c - 'a' + 10;
+    for(char c = 'A'; c <= 'F'; ++c) table[(unsigned char)c] = c - 'A' + 10;
+    return table;
+}
+
+constexpr auto p_util_hexdigit = MakeHexDigitTable();
 
 inline signed char HexDigit(char c){
     return p_util_hexdigit[(unsigned char)c];
@@ -82,8 +75,6 @@ class buffer256 {
         static_assert(WIDTH == sizeof(b_data), "Sanity check");
 };
 
-template <class uintN_t>
-std::optional<uintN_t> FromHex(std::string_view str);
 inline std::string HexStr(const std::span<const uint8_t> s){
     std::string rv(s.size() * 2, '\0');
     static constexpr char hexmap[] = "0123456789abcdef";
