@@ -10,6 +10,12 @@
 #include <algorithm>
 #include <compare>
 
+/*
+Implementation of a unsigned 256 bit integer intended to store a SHA256 hash code.
+The uint256 is meant solely for storage and unable to have arithmetic performed on it.
+*/
+
+// Builds a decode table to translate into a hex number from an ASCII value
 constexpr std::array<signed char, 256> MakeHexDigitTable(){
     std::array<signed char, 256> table{};
     for(auto& v : table) v = -1;
@@ -18,22 +24,65 @@ constexpr std::array<signed char, 256> MakeHexDigitTable(){
     for(char c = 'A'; c <= 'F'; ++c) table[(unsigned char)c] = c - 'A' + 10;
     return table;
 }
-
 constexpr auto p_util_hexdigit = MakeHexDigitTable();
-
+// Converts a character to its hex value
 inline signed char HexDigit(char c){
     return p_util_hexdigit[(unsigned char)c];
 }
 
+// Namespace to hold helper functions for string encoding and decoding
 namespace util {
+    // Remmoves the "0x" prefix on inputted hex numbers
     [[nodiscard]] inline std::string_view RemovePrefixView(std::string_view str, std::string_view prefix){
         if (str.starts_with(prefix)){
             return str.substr(prefix.size());
         }
         return str;
     }
+
+    // Returns true if a string is a valid hex number, false otherwise.
+    inline bool IsHex(std::string_view str)
+    {
+        for (char c : str) {
+            if (HexDigit(c) < 0) return false;
+        }
+        return (str.size() > 0) && (str.size()%2 == 0);
+    }
+
+    template <class uintN_t>
+    std::optional<uintN_t> FromHex(std::string_view str)
+    {
+        if (uintN_t::size() * 2 != str.size() || !IsHex(str)) return std::nullopt;
+        uintN_t rv;
+        unsigned char* p1 = rv.begin();
+        unsigned char* pend = rv.end();
+        size_t digits = str.size();
+        while (digits > 0 && p1 < pend) {
+            *p1 = ::HexDigit(str[--digits]);
+            if (digits > 0) {
+                *p1 |= ((unsigned char)::HexDigit(str[--digits]) << 4);
+                p1++;
+            }
+        }
+        return rv;
+    }
+
+    template <class uintN_t>
+    std::optional<uintN_t> FromUserHex(std::string_view input)
+    {
+        input = util::RemovePrefixView(input, "0x");
+        constexpr auto expected_size{uintN_t::size() * 2};
+        if (input.size() < expected_size) {
+            auto padded = std::string(expected_size, '0');
+            std::copy(input.begin(), input.end(), padded.begin() + expected_size - input.size());
+            return FromHex<uintN_t>(padded);
+        }
+        return FromHex<uintN_t>(input);
+    }
 }
 
+// Parent class to create a 256 bit contiguous space in memory.
+// Used by uint256 to reserve space to store int value.
 class buffer256 {
     public:
         constexpr buffer256() : b_data{} {}
@@ -75,6 +124,8 @@ class buffer256 {
         static_assert(WIDTH == sizeof(b_data), "Sanity check");
 };
 
+// Reads the byte hex value in s and converts it to a string.
+// Used in buffer256::GetHex() definition.
 inline std::string HexStr(const std::span<const uint8_t> s){
     std::string rv(s.size() * 2, '\0');
     static constexpr char hexmap[] = "0123456789abcdef";
@@ -86,55 +137,14 @@ inline std::string HexStr(const std::span<const uint8_t> s){
     return rv;
 }
 
-namespace detail {
-
-    inline bool IsHex(std::string_view str)
-    {
-        for (char c : str) {
-            if (HexDigit(c) < 0) return false;
-        }
-        return (str.size() > 0) && (str.size()%2 == 0);
-    }
-
-    template <class uintN_t>
-    std::optional<uintN_t> FromHex(std::string_view str)
-    {
-        if (uintN_t::size() * 2 != str.size() || !IsHex(str)) return std::nullopt;
-        uintN_t rv;
-        unsigned char* p1 = rv.begin();
-        unsigned char* pend = rv.end();
-        size_t digits = str.size();
-        while (digits > 0 && p1 < pend) {
-            *p1 = ::HexDigit(str[--digits]);
-            if (digits > 0) {
-                *p1 |= ((unsigned char)::HexDigit(str[--digits]) << 4);
-                p1++;
-            }
-        }
-        return rv;
-    }
-
-    template <class uintN_t>
-    std::optional<uintN_t> FromUserHex(std::string_view input)
-    {
-        input = util::RemovePrefixView(input, "0x");
-        constexpr auto expected_size{uintN_t::size() * 2};
-        if (input.size() < expected_size) {
-            auto padded = std::string(expected_size, '0');
-            std::copy(input.begin(), input.end(), padded.begin() + expected_size - input.size());
-            return FromHex<uintN_t>(padded);
-        }
-        return FromHex<uintN_t>(input);
-    }
-}
-
+// Unsigned 256 bit integer implementation
 class uint256 : public buffer256 {
     public:
         static std::optional<uint256> FromHex(std::string_view str){
-            return detail::FromHex<uint256>(str);
+            return util::FromHex<uint256>(str);
         }
         static std::optional<uint256> FromUserHex(std::string_view str){
-            return detail::FromUserHex<uint256>(str);
+            return util::FromUserHex<uint256>(str);
         }
         constexpr uint256() = default;
         consteval explicit uint256(std::string_view hex_str) : buffer256(hex_str){}
