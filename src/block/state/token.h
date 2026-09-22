@@ -41,9 +41,9 @@ bool validAddress(address addr){
 }
 
 namespace TokenRegistry{
-    Token Mint();
+    Token mint();
     // Update values of a token
-    void update(address to, uint256 id, address auth);
+    void update(address to, Token token);
     // Transfer ownership of a token from one vault address to another
     void transfer(address from, address to, uint256 tokenId);
     // Approve if a transaction is possible and should take place
