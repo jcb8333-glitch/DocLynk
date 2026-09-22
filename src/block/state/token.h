@@ -2,15 +2,19 @@
 
 #include <string>
 #include <uint256.h>
+#include <unordered_map>
 /*
 Contains methods on tokenizing a document and ensuring its validity.
 */
 
+std::unordered_map<uint256, address> owners_;
+
 // Enum to track token process errors
 enum TokenLogs{
     Success = 0,
-    InvalidSender = 1,
-    InvalidReceiver = 2,
+    InvalidAddress = 1,
+    InvalidSender = 2,
+    InvalidReceiver = 3,
 };
 
 // Enum to track current lock state of token
@@ -21,7 +25,7 @@ enum LockState{
 
 // Temporary? struct to hold address type
 struct address{
-    std::string addr;
+    uint64_t addr;
 };
 
 struct Token{
@@ -32,14 +36,16 @@ struct Token{
     address owner;
 };
 
+bool validAddress(address addr){
+    return !(addr.addr == 0);
+}
+
 namespace TokenRegistry{
     Token Mint();
     // Update values of a token
-    void Update(address to, uint256 id, address auth);
+    void update(address to, uint256 id, address auth);
     // Transfer ownership of a token from one vault address to another
-    void Transfer(address from, address to, uint256 tokenId);
+    void transfer(address from, address to, uint256 tokenId);
     // Approve if a transaction is possible and should take place
-    bool Approve();
-    // Returns owner vault address of token
-    address OwnerOf(uint256 tokenId);
+    bool approve();
 }
