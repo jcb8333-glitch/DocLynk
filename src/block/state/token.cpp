@@ -1,9 +1,14 @@
 #include <token.h>
-#include <cassert>
+#include <map>
+
+/*
+    Includes mappings for token by id and owner by id lookups 
+    in addition to function definitions declared in token header
+*/
 
 namespace {
-    std::unordered_map<uint256, Token> tokens_;
-    std::unordered_map<uint256, address> owners_;
+    std::map<uint256, Token> tokens_;
+    std::map<uint256, address> owners_;
 }
 
 bool validAddress(address addr){

@@ -2,10 +2,9 @@
 
 #include <string>
 #include <uint256.h>
-#include <unordered_map>
 
 /*
-Contains data structures and abstract methods used in token.cpp
+    Contains data structures and abstract methods used in token.cpp
 */
 
 // Track specific token status messages through int value
