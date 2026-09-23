@@ -34,6 +34,6 @@ bool validAddress(address addr);
 namespace TokenRegistry{
     Token mint(address to, uint256 id);
     void update(address to, uint256 id);
-    void transfer(address from, address to, uint256 id);
+    int transfer(address from, address to, uint256 id);
     bool approve(uint256 id, address auth);
 }
