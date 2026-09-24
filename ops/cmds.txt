@@ -1,0 +1,7 @@
+======== Commands ========
+kubectl -n testnet logs -l app=node --prefix --tail=20 --max-log-requests=63 # all nodes
+
+kubectl -n testnet logs deploy/bootnode          # bootnode
+kubectl -n testnet get pods                      # list pod names
+kubectl -n testnet logs node-<suffix>            # a specific node
+kubectl -n testnet logs -f deploy/bootnode       # follow live
