@@ -472,3 +472,5 @@ class Node{
             return EXIT_SUCCESS;
         }
 };
+
+int initNode(int argc, char* argv[]);

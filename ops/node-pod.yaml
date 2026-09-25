@@ -13,7 +13,7 @@ spec:
       image: p2p-node:latest
       imagePullPolicy: IfNotPresent
       command:
-        - /usr/local/bin/node
+        - /usr/local/bin/doclynk
         - --self
         - $(POD_IP)
         - --boot

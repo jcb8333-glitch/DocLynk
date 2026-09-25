@@ -16,9 +16,9 @@ int initNode(int argc, char* argv[]){
     if(selfAddr && bootAddr){
         Node node(selfAddr, bootAddr);
         node.joinAll();
+        return EXIT_SUCCESS;
     } else {
         std::cerr << "Node address or boot address is null" << std::endl;
         return EXIT_FAILURE;
     }
-    return 0;
 }
