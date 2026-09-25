@@ -1,7 +1,7 @@
 #pragma once
 
 #include <string>
-#include <uint256.h>
+#include <utils/uint256.h>
 
 /*
     Contains data structures and abstract methods used in token.cpp

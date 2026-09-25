@@ -56,7 +56,7 @@ struct Packet {
 };
 
 // Serializes a packet and its contents into binary to be sent over a socket.
-int sendPacket(int sockfd, Packet& packet){
+inline int sendPacket(int sockfd, Packet& packet){
     std::stringstream ss;
     {
         cereal::BinaryOutputArchive archive(ss);
@@ -70,7 +70,7 @@ int sendPacket(int sockfd, Packet& packet){
 }
 
 // De-serializes a packet and its contents that was received over a socket.
-int recvPacket(int sockfd, Packet& packet){
+inline int recvPacket(int sockfd, Packet& packet){
     uint32_t len;
     if(recv(sockfd, &len, sizeof(len), MSG_WAITALL) != sizeof(len)) return -1;
     len = ntohl(len);

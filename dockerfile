@@ -17,6 +17,5 @@ RUN cmake -B build -S . -DCMAKE_BUILD_TYPE=Release \
 FROM ubuntu:24.04
 RUN apt-get update && apt-get install -y libssl3 \
     && rm -rf /var/lib/apt/lists/*
-COPY --from=build /app/build/node /usr/local/bin/node
-COPY --from=build /app/build/bootnode /usr/local/bin/bootnode
-ENTRYPOINT [ "/usr/local/bin/node" ]
+COPY --from=build /app/build/doclynk /usr/local/bin/doclynk
+ENTRYPOINT [ "/usr/local/bin/doclynk" ]

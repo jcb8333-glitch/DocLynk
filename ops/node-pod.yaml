@@ -1,0 +1,29 @@
+# Initializes 63 standard nodes on test net
+apiVersion: v1
+kind: Pod
+metadata:
+  generateName: node-
+  namespace: testnet
+  labels:
+    app: node
+spec:
+  restartPolicy: Never
+  containers:
+    - name: node
+      image: p2p-node:latest
+      imagePullPolicy: IfNotPresent
+      command:
+        - /usr/local/bin/doclynk
+        - --self
+        - $(POD_IP)
+        - --boot
+        - $(BOOTNODE_SERVICE_HOST)
+      env:
+        - name: POD_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+      resources:
+        requests:
+          cpu: 50m
+          memory: 64Mi
