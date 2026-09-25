@@ -10,7 +10,3 @@ find_package(OpenSSL REQUIRED)
 add_executable(node src/net/node/node.cpp)
 target_include_directories(node PRIVATE src src/net/node)
 target_link_libraries(node PRIVATE Threads::Threads OpenSSL::Crypto)
-
-add_executable(bootnode src/net/node/bootnode.cpp)
-target_include_directories(bootnode PRIVATE src src/net/node)
-target_link_libraries(bootnode PRIVATE Threads::Threads OpenSSL::Crypto)

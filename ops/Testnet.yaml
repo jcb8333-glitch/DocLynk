@@ -1,3 +1,4 @@
+# Maintains a node 0 as a bootnode service
 apiVersion: v1
 kind: Namespace
 metadata:
@@ -13,17 +14,18 @@ spec:
     app: bootnode
   ports:
     - name: p2p
-      port: 9000
-      targetPort: 9000
-      protocol: TCP
+      port: 8575
+      targetPort: 8575
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: bootnode
+  name: node-0
   namespace: testnet
 spec:
   replicas: 1
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: bootnode
@@ -31,36 +33,6 @@ spec:
     metadata:
       labels:
         app: bootnode
-    spec:
-      containers:
-        - name: bootnode
-          image: p2p-node:latest
-          imagePullPolicy: IfNotPresent
-          command: ["/usr/local/bin/bootnode", "--self", "$(POD_IP)"]
-          env:
-            - name: POD_IP
-              valueFrom:
-                fieldRef:
-                  fieldPath: status.podIP
-          resources:
-            requests:
-              cpu: 50m
-              memory: 64Mi
----
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: node
-  namespace: testnet
-spec:
-  replicas: 63
-  selector:
-    matchLabels:
-      app: node
-  template:
-    metadata:
-      labels:
-        app: node
     spec:
       containers:
         - name: node
@@ -71,7 +43,7 @@ spec:
             - --self
             - $(POD_IP)
             - --boot
-            - $(BOOTNODE_SERVICE_HOST)
+            - $(POD_IP)
           env:
             - name: POD_IP
               valueFrom:
