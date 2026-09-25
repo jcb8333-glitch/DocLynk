@@ -88,6 +88,7 @@ config.h
 *.out
 *.app
 main
+build/*
 
 # vscode
 .vscode
