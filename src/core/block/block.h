@@ -10,7 +10,6 @@ Contains structure of a block to be held by network nodes.
 
 // Block header to hold meta data
 struct Header{
-    Block* prev;
     std::string timestamp;
     uint32_t nonce;
 };

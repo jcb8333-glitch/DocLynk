@@ -1,6 +1,6 @@
 #pragma once
 
-#include <state/token.h>
+#include <token.h>
 #include <string>
 
 /*
@@ -14,8 +14,8 @@ struct MerkleNode {
 };
 
 // Function intended to hash the leaf nodes to build the Merkle root - may change method later
-MerkleNode buildRoot(){}
+// MerkleNode buildRoot(){}
 
 // Helper functions to bould a node from a token or a hash 
-MerkleNode buildNode(Token token){}
-MerkleNode buildNode(std::string hash1, std::string hash2){}
+// MerkleNode buildNode(Token token){}
+// MerkleNode buildNode(std::string hash1, std::string hash2){}

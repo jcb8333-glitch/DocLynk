@@ -1,6 +1,6 @@
 #include <node.h>
 
-int main(int argc, char* argv[]){
+int initNode(int argc, char* argv[]){
     const char* selfAddr = nullptr;
     const char* bootAddr = nullptr;
 
@@ -20,4 +20,5 @@ int main(int argc, char* argv[]){
         std::cerr << "Node address or boot address is null" << std::endl;
         return EXIT_FAILURE;
     }
+    return 0;
 }

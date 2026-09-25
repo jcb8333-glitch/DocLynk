@@ -7,6 +7,20 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 find_package(Threads REQUIRED)
 find_package(OpenSSL REQUIRED)
 
-add_executable(node src/net/node/node.cpp)
-target_include_directories(node PRIVATE src src/net/node)
-target_link_libraries(node PRIVATE Threads::Threads OpenSSL::Crypto)
+add_executable(doclynk
+    src/doclynkd.cpp
+    src/net/node.cpp
+    src/core/token/token.cpp
+    src/core/block/block.cpp
+)
+
+target_include_directories(doclynk
+    PUBLIC  ${CMAKE_SOURCE_DIR}/include # Just in case
+    PRIVATE ${CMAKE_SOURCE_DIR}/src
+            ${CMAKE_SOURCE_DIR}/src/net
+            ${CMAKE_SOURCE_DIR}/src/core/token
+            ${CMAKE_SOURCE_DIR}/src/core/block
+            /usr/local/include  
+)
+
+target_link_libraries(doclynk PRIVATE Threads::Threads OpenSSL::SSL)
