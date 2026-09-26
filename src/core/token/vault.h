@@ -3,6 +3,7 @@
 #include <string>
 #include <cstdint>
 #include <utils/sha1.h>
+#include <utils/pkeys.h>
 
 /*
 Vault contains a hierarchical deterministic tree to hold tokens.
@@ -13,17 +14,19 @@ class Vault{
     public:
         const uint64_t addr;
 
-        Vault();
+        Vault()=default;
         
-        void sign(){
-            // On ownership authorized, vault encrypt transaction with public key
-        }
-        void accept(){
-            // On token receivec, decrypts token and sets token state to locked 
-            // This adds a transatction to mempool
-        }
+        // On ownership authorized, vault encrypt transaction with public key
+        void sign();
+
+        // On token receivec, decrypts token and sets token state to locked 
+        // This adds a transatction to mempool
+        void accept();
+
     private:
         const std::string seed;
-        const int publicKey;
-        const int privateKey;
+        const std::string publicKey;
+        const std::string privateKey;
+
+        Vault(KeyPairPEM keys);
 };
