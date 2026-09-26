@@ -7,11 +7,18 @@
 #include <cassert>
 #include <stdexcept>
 
+/*
+    Handles private and public key generation used for vault token encryption
+    before a transaction is sent over the network.
+*/
+
+// Declaring struct to store the keys to be retrieved by vault constructor
 struct KeyPairPEM {
     std::string privateKey;
     std::string publicKey;
 };
 
+// generates pkey to be used to get public and private keys
 EVP_PKEY* generateKeypair(){
     EVP_PKEY_CTX* ctx = EVP_PKEY_CTX_new_id(EVP_PKEY_EC, nullptr);
     if(!ctx) return nullptr;
@@ -33,6 +40,7 @@ EVP_PKEY* generateKeypair(){
     return pkey;
 }
 
+// Generates private key
 std::string getPrivateKeyPEM(EVP_PKEY* pkey){
     BIO* bio = BIO_new(BIO_s_mem());
     if(!bio) return "";
@@ -50,6 +58,7 @@ std::string getPrivateKeyPEM(EVP_PKEY* pkey){
     return pem;
 }
 
+// Generates public key
 std::string getPublicKeyPEM(EVP_PKEY* pkey){
     BIO* bio = BIO_new(BIO_s_mem());
     if(!bio) return "";
@@ -66,15 +75,16 @@ std::string getPublicKeyPEM(EVP_PKEY* pkey){
     return pem;
 }
 
+// Adds public and private keys to key pair struct used by vault
 KeyPairPEM generateKeypairPEM(){
     EVP_PKEY* pkey = generateKeypair();
     if(!pkey) throw std::runtime_error("Vault: key generation failed");
 
-    KeyPairPEM result{ getPrivateKeyPEM(pkey), getPublicKeyPEM(pkey) };
+    KeyPairPEM res{ getPrivateKeyPEM(pkey), getPublicKeyPEM(pkey) };
     EVP_PKEY_free(pkey);
 
-    if(result.privateKey.empty() || result.publicKey.empty()){
+    if(res.privateKey.empty() || res.publicKey.empty()){
         throw std::runtime_error("Vault: PEM encoding failed");
     }
-    return result;
+    return res;
 }
