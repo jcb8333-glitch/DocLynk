@@ -2,14 +2,32 @@
 
 #include <string>
 #include <cstdint>
+#include <random>
 #include <utils/sha1.h>
 #include <utils/pkeys.h>
+#include <utils/uint256.h>
 
 /*
 Vault contains a hierarchical deterministic tree to hold tokens.
 Handles encryption and decryption of 
 A vault address is held by a token to know to who the token belongs.
 */
+// Used in the vault constructor to generate a uint64 hex string for a seed
+std::string seedGen(){
+    const std::string hexchars = "0123456789abcdef";
+
+    std::random_device rd;
+    std::mt19937 generator(rd());
+    std::uniform_int_distribution<size_t> distribution(0, hexchars.size() - 1);
+
+    std::string seed;
+    seed.reserve(16);
+    for(int i = 0; i < 16; ++i){
+        seed += hexchars[distribution(generator)];
+    }
+    return seed;
+}  
+
 class Vault{
     public:
         const uint64_t addr;
@@ -28,5 +46,5 @@ class Vault{
         const std::string publicKey;
         const std::string privateKey;
 
-        Vault(KeyPairPEM keys);
+        Vault(KeyPairPEM keys); 
 };

@@ -3,8 +3,8 @@
 Vault::Vault() : Vault(generateKeypairPEM()){}
 
 Vault::Vault(KeyPairPEM keys):
-    seed(""),
-    addr(0),
+    seed(seedGen()),
+    addr(sha1Trunc(seed)),
     publicKey(std::move(keys.publicKey)),
     privateKey(std::move(keys.privateKey))
 {}
