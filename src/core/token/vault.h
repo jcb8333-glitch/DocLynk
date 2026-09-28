@@ -25,8 +25,13 @@ std::string seedGen(){
     for(int i = 0; i < 16; ++i){
         seed += hexchars[distribution(generator)];
     }
+    auto now = std::chrono::high_resolution_clock::now();
+    auto nanos = std::chrono::duration_cast<std::chrono::nanoseconds>(
+        now.time_since_epoch()
+    ).count();
+    seed += std::to_string(nanos);
     return seed;
-}  
+}   
 
 class Vault{
     public:
