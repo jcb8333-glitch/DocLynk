@@ -47,7 +47,6 @@ class Vault{
         void accept();
 
     private:
-        const std::string seed;
         const std::string publicKey;
         const std::string privateKey;
 
