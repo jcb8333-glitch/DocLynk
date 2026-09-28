@@ -41,15 +41,19 @@ class Vault{
         Vault()=default;
         
         // On ownership authorized, vault encrypt transaction with public key
-        void sign();
+        int sign();
 
         // On token receivec, decrypts token and sets token state to locked 
         // This adds a transatction to mempool
-        void accept();
+        int accept();
 
     private:
-        const std::string publicKey;
-        const std::string privateKey;
+        const std::string seed;
+        const std::string masterKey;
 
         Vault(KeyPairPEM keys); 
+
+        int genKeyLayer(){
+            
+        }
 };

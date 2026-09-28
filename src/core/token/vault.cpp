@@ -3,7 +3,11 @@
 Vault::Vault() : Vault(generateKeypairPEM()){}
 
 Vault::Vault(KeyPairPEM keys):
-    addr(sha1Trunc(seedGen())),
-    publicKey(std::move(keys.publicKey)),
-    privateKey(std::move(keys.privateKey))
+    seed(std::move(seedGen())),
+    addr(std::move(sha1Trunc(seed))),
+    masterKey(std::move(""))
 {}
+
+int Vault::sign(){}
+
+int Vault::accept(){}
