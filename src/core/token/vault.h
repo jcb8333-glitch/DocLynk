@@ -49,9 +49,7 @@ class Vault{
 
     private:
         const std::string seed;
-        const std::string mPrivKey;
+        std::array<uint8_t, 32> mPrivKey;
         const std::string mPubKey;
-        std::string entroCode;
-
-        Vault(KeyPairPEM keys); 
+        std::array<uint8_t, 32> entroCode;
 };
