@@ -4,7 +4,7 @@
 #include <cstdint>
 #include <random>
 #include <chrono>
-#include <utils/sha1.h>
+#include <utils/sha.h>
 #include <utils/pkeys.h>
 #include <utils/uint256.h>
 
@@ -50,10 +50,9 @@ class Vault{
     private:
         const std::string seed;
         const std::string masterKey;
+        std::string entroCode;
 
         Vault(KeyPairPEM keys); 
 
-        int genKeyLayer(){
-            
-        }
+        int genKeyLayer();
 };
