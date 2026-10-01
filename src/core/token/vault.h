@@ -49,10 +49,9 @@ class Vault{
 
     private:
         const std::string seed;
-        const std::string masterKey;
+        const std::string mPrivKey;
+        const std::string mPubKey;
         std::string entroCode;
 
         Vault(KeyPairPEM keys); 
-
-        int genKeyLayer();
 };

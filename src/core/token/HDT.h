@@ -5,12 +5,16 @@
 #include <cstdint>
 #include <openssl/hmac.h>
 
-//TODO: refactor to not reuse code
 
 struct DerivedSet{
-    std::array<uint8_t, 32> privKey,
-    std::array<uint8_t, 32> chainCode
+    std::array<uint8_t, 32> privKey;
+    std::array<uint8_t, 32> chainCode;
 };
+
+void setDerivedVals(DerivedSet& dset, const unsigned char* out){
+    std::copy(out, out + 32, dset.privKey.begin());
+    std::copy(out + 32, out + 64, dset.chainCode.begin());
+}
 
 DerivedSet deriveChild(const DerivedSet& parent, uint32_t idx){
     std::array<uint8_t, 36> data{};
@@ -19,15 +23,14 @@ DerivedSet deriveChild(const DerivedSet& parent, uint32_t idx){
     data[33] = (idx >> 16) & 0xFF;
     data[34] = (idx >> 8) & 0xFF;
     data[35] = idx & 0xFF;
-    
+
     unsigned char out[64];
-    unsigned int outlen - 0;
+    unsigned int outlen = 0;
     HMAC(EVP_sha512(), parent.chainCode.data(), parent.chainCode.size(),
-        data.data(), data.size(), out, &outLen);
+        data.data(), data.size(), out, &outlen);
 
     DerivedSet child{};
-    std::copy(out, out+32, child.privKey.begin());
-    std::copy(out+32, out+64, child.chainCode.begin());
+    setDerivedVals(child, out);
     return child;
 }
 
@@ -39,7 +42,6 @@ DerivedSet evalMaster(const std::string& seed){
         reinterpret_cast<const unsigned char*>(seed.data()), seed.size(), out, &outlen);
 
     DerivedSet master{};
-    std::copy(out, out+32, master.privKey.begin());
-    std::copy(out+32, out+64, master.chainCode.begin());
+    setDerivedVals(master, out);
     return master;
 }
