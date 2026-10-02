@@ -24,7 +24,7 @@
 #include <ostream>
 
 #include <net/proto.h>
-#include <utils/sha1.h>
+#include <utils/sha.h>
 
 /*
 PeerConn represents the connection between nodes.

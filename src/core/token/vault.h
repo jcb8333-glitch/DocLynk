@@ -3,7 +3,9 @@
 #include <string>
 #include <cstdint>
 #include <random>
-#include <utils/sha1.h>
+#include <chrono>
+#include <HDT.h>
+#include <utils/sha.h>
 #include <utils/pkeys.h>
 #include <utils/uint256.h>
 
@@ -25,8 +27,13 @@ std::string seedGen(){
     for(int i = 0; i < 16; ++i){
         seed += hexchars[distribution(generator)];
     }
+    auto now = std::chrono::high_resolution_clock::now();
+    auto nanos = std::chrono::duration_cast<std::chrono::nanoseconds>(
+        now.time_since_epoch()
+    ).count();
+    seed += std::to_string(nanos);
     return seed;
-}  
+}   
 
 class Vault{
     public:
@@ -35,16 +42,17 @@ class Vault{
         Vault()=default;
         
         // On ownership authorized, vault encrypt transaction with public key
-        void sign();
+        int sign();
 
         // On token receivec, decrypts token and sets token state to locked 
         // This adds a transatction to mempool
-        void accept();
+        int accept();
 
     private:
         const std::string seed;
-        const std::string publicKey;
-        const std::string privateKey;
+        const std::array<uint8_t, 32> mPrivKey;
+        const std::string mPubKey;
+        std::array<uint8_t, 32> entroCode;
 
-        Vault(KeyPairPEM keys); 
+        Vault(std::pair<DerivedSet, std::string> seeded);
 };
