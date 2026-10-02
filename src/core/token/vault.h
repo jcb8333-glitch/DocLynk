@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <random>
 #include <chrono>
+#include <HDT.h>
 #include <utils/sha.h>
 #include <utils/pkeys.h>
 #include <utils/uint256.h>
@@ -49,7 +50,9 @@ class Vault{
 
     private:
         const std::string seed;
-        std::array<uint8_t, 32> mPrivKey;
+        const std::array<uint8_t, 32> mPrivKey;
         const std::string mPubKey;
         std::array<uint8_t, 32> entroCode;
+
+        Vault(std::pair<DerivedSet, std::string> seeded);
 };

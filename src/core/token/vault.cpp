@@ -1,16 +1,18 @@
 #include <vault.h>
-#include <HDT.h>
 
-// TODO: Make constructor compatible with const master keys
-Vault::Vault():
-    seed(std::move(seedGen())),
-    addr(std::move(sha1Trunc(seed)))
+Vault::Vault() : Vault([]{
+    std::string s = seedGen();
+    DerivedSet d = evalMaster(s);
+    return std::make_pair(std::move(d), std::move(s));
+}()){}
+
+Vault::Vault(std::pair<DerivedSet, std::string> seeded):
+    seed(std::move(seeded.second)),
+    addr(std::move(sha1Trunc(seed))),
+    mPrivKey(std::move(seeded.first.privKey)),
+    entroCode(std::move(seeded.first.chainCode))
     
-{
-    DerivedSet dset = evalMaster(seed); 
-    mPrivKey = std::move(dset.privKey);
-    entroCode = std::move(dset.chainCode);
-}
+{}
 
 int Vault::sign(){}
 
