@@ -44,11 +44,18 @@ class PeerConn {
 
         PeerConn(int fd, std::string addr) : sockfd(fd), peerAddr(std::move(addr)){}
 
+        void shutdownSocket() {
+            alive=false;
+            ::shutdown(sockfd, SHUT_RDWR);
+        }
+
         ~PeerConn(){
-            alive = false;
-            shutdown(sockfd, SHUT_RDWR);
+            shutdownSocket();
+            if(reader.joinable()){
+                if(reader.get_id() == std::this_thread::get_id()) reader.detach();
+                else reader.join();
+            }
             close(sockfd);
-            if (reader.joinable()) reader.join();
         }
 };
 
