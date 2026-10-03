@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<title>DocLynk Documentation</title>
+
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <ul>
+        <li><a href="./index.html">Home</a></li>
+        <li><a href="./network.html">Network</a></li>
+        <li><a href="./core.html">Core</a></li>
+    </ul>
+    <article>
+        <header>
+            <h1>DocLynk Documentation</h1>
+            <hr>
+        </header>
+        <section>
+            <h2>Block</h2>
+            <p>
+                This core component is intended to hold the blockchain state. This is yet to be implemented, more will be added on 
+                this component later.
+            </p>
+            <h2>Vault</h2>
+            <p>
+                Used to assign an owner to a token with a wallet address and enables encryption before token ownership is updated on 
+                the network. A vault uses a hierarchical deterministic tree to generate encryption keys for tokens assigned to a vault determined
+                by a vault seed. The majority of a vault's function has yet to be implemented.
+            </p>
+            <h2>Token</h2>
+            <p>
+                Token contains the actual logic for changing the ownership of a token. When a token hasn't been approved to be transfered it is held in a locked state
+                blocking the change of ownership, when a transaction is verified it becomes unlocked. Token is yet to be finished.
+            </p>
+        </section>
+    </article>
+</body>

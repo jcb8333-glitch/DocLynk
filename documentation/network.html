@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<title>DocLynk Documentation</title>
+
+<link rel="stylesheet" href="styles.css">
+
+</head>
+
+<body>
+    <ul>
+        <li><a href="./index.html">Home</a></li>
+        <li><a href="./network.html">Network</a></li>
+        <li><a href="./core.html">Core</a></li>
+    </ul>
+    <article>
+        <header>
+            <h1>DocLynk Documentation</h1>
+            <hr>
+        </header>
+        <h2>Network</h2>
+
+        <p>
+            DocLynk is built on top of a P2P Chord network.
+            Reference the
+            <a href="https://en.wikipedia.org/wiki/Chord_(peer-to-peer)">
+                Chord Wikipedia Page
+            </a>.
+        </p>
+
+        <section>
+            <h3>Protocol</h3>
+
+            <p>
+                The data structures and tools for the network and used by
+                node.h and node.cpp are located in proto.h.
+                This file includes structs which hold information on a node.
+                This is what is serialized into a binary stream by the
+                cereal library to prevent unnecessary functions from being
+                sent over the network.
+            </p>
+
+            <pre><code class="language-cpp">struct nInf {
+        uint64_t id;
+        std::string addr;
+        std::string targetAddr;
+        std::vector&lt;RouteEntry&gt; routeTable;
+        std::vector&lt;nInf&gt; connections;
+
+        template &lt;class Archive&gt;
+        void serialize(Archive&amp; ar) {
+            ar(id, addr, targetAddr, routeTable, connections);
+        }
+    };</code></pre>
+
+            <p>
+                Proto.h also contains a struct used to hold only the needed
+                values of another node in order to direct network traffic to it.
+                This struct acts as an entry held in a node's routing finger table.
+            </p>
+
+            <pre><code class="language-cpp">struct RouteEntry {
+        uint64_t startID;
+        uint64_t nodeID;
+        std::string addr;
+
+        template &lt;class Archive&gt;
+        void serialize(Archive&amp; ar) {
+            ar(startID, nodeID, addr);
+        }
+    };</code></pre>
+
+            <p>
+                In order for other nodes to process the data correctly, a Packet
+                struct and a message type enum are used. The packet holds a nInf
+                struct as a payload and stores other values for general routing.
+                The message type is used in the node.h file to determine what is
+                done with the packet.
+            </p>
+
+            <pre><code class="language-cpp">enum class MsgType : uint8_t {
+        GetPredReq = 0,
+        GetPredRes = 1,
+        NotifyReq = 2,
+        NotifyRes = 3,
+        FindSuccReq = 6,
+        FindSuccRes = 7,
+        Ping = 4,
+        Pong = 5
+    };
+
+    struct Packet {
+        MsgType type;
+        uint64_t packetID;
+        uint64_t chordID;
+        nInf payload;
+
+        template &lt;class Archive&gt;
+        void serialize(Archive&amp; ar) {
+            ar(type, packetID, chordID, payload);
+        }
+    };</code></pre>
+
+            <p>
+                The last two important networking features in proto.h are the
+                functions to send and receive a packet. Both of these can be
+                called with the file descriptor of a specified socket and the
+                packet that should be sent as arguments.
+            </p>
+
+            <pre><code class="language-cpp">inline int sendPacket(int sockfd, Packet&amp; packet) {
+        std::stringstream ss;
+        {
+            cereal::BinaryOutputArchive archive(ss);
+            archive(packet);
+        }
+
+        std::string payload = ss.str();
+
+        uint32_t len = htonl(
+            static_cast&lt;uint32_t&gt;(payload.size())
+        );
+
+        if (send(sockfd, &amp;len, sizeof(len), 0) != sizeof(len))
+            return -1;
+
+        if (send(sockfd, payload.data(), payload.size(), 0)
+            != (ssize_t)payload.size())
+            return -2;
+
+        return 0;
+    }
+
+    inline int recvPacket(int sockfd, Packet& packet) {
+        uint32_t len;
+
+        if (recv(sockfd, &amp;len, sizeof(len), MSG_WAITALL) != sizeof(len))
+            return -1;
+
+        len = ntohl(len);
+
+        std::string payload(len, '\0');
+
+        if (recv(sockfd, payload.data(), len, MSG_WAITALL) != (ssize_t)len)
+            return -2;
+
+        std::stringstream ss(payload);
+
+        cereal::BinaryInputArchive archive(ss);
+        archive(packet);
+
+        return 0;
+    }</code></pre> </section>
+
+        <section>
+            <h3>Node</h3>
+
+            <p>
+                Node.h contains all of the networking logic which is applied
+                in node.cpp. The two main parts of this file are PeerConn,
+                which is a class to easily represent the connection between
+                two nodes, and a Node class which represents a device on the
+                network.
+            </p>
+
+            <p>
+                PeerConn holds the addresses of the two nodes on the connection,
+                the file descriptor of the socket, and contains the locks used
+                to prevent race conditions when sending packets on the connection.
+            </p>
+
+            <p>
+                The Node class has a series of functions implementing Chord
+                network P2P stabilizations and general network logic through
+                a server and a client thread. You can reference Node.h to learn
+                more specific information on how a node functions.
+            </p>
+
+            <p>
+                Node.cpp applies the code from Node.h by creating a node and
+                acts as a starting point for the DocLynk daemon.
+            </p>
+        </section>
+    </article>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/languages/cpp.min.js"></script>
+
+<script>
+    hljs.highlightAll();
+</script>
+
+</body>
+</html>
