@@ -1,0 +1,70 @@
+body {
+    font-family:'Gill Sans', 'Gill Sans MT', Calibri, 'Trebuchet MS', sans-serif;
+    display: flex;
+    color: #f0f0f0;
+    background-color: rgb(27, 26, 29);
+}
+a {
+    color: #45caff;
+}
+
+code {
+    font-family: "JetBrains Mono", "Fira Code", "Cascadia Code",
+                 "Consolas", monospace;
+    font-size: 0.9rem;
+}
+
+pre {
+    background-color: #0c0c0c;
+    color: #d7d7d7;
+    padding: 1.25rem 1.5rem;
+    border-radius: 10px;
+    overflow-x: auto;
+    line-height: 1.7;
+    margin: 1.25rem 0;
+    tab-size: 4;
+    white-space: pre;
+    width: fit-content;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+pre code {
+    background: transparent;
+    padding: 0;
+    border: none;
+    border-radius: 0;
+    font-size: 0.875rem;
+    font-family: "JetBrains Mono", "Fira Code", "Consolas", monospace;
+    color: inherit;
+    white-space: inherit;
+}
+
+p code {
+    background-color: #1d1d1d;
+    color: #f38ba8;
+    padding: 0.15em 0.4em;
+    border-radius: 4px;
+    font-size: 0.9em;
+}
+
+pre::-webkit-scrollbar {
+    height: 8px;
+}
+
+pre::-webkit-scrollbar-track {
+    background: #181825;
+    border-radius: 4px;
+}
+
+pre::-webkit-scrollbar-thumb {
+    background: #45475a;
+    border-radius: 4px;
+}
+
+pre::-webkit-scrollbar-thumb:hover {
+    background: #585b70;
+}
+
+article {
+    margin-left: 20px;
+}

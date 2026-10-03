@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<title>DocLynk Documentation</title>
+
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <ul>
+        <li><a href="./index.html">Home</a></li>
+        <li><a href="./network.html">Network</a></li>
+        <li><a href="./core.html">Core</a></li>
+    </ul>
+    <article>
+        <header>
+            <h1>DocLynk Documentation</h1>
+            <hr>
+        </header>
+        <section>
+            <p>
+                Doclynk is currently built for Unix based machines so the project and its dependendencies live in a Linux dev container.
+            </p>
+            <h2>Project Structure</h2>
+            <p>
+                All of the network and blockchain code is contained inside of the src directory. The main program file is placed inside of doclynk.cpp 
+                and all other components for the project come together in this function. The networking logic is all inside of the net directory and all of the unique 
+                functions of Doclynk live inside of the core directory. The utils directory holds header files for custom data strcuture implementations and general functions 
+                which are used in several areas of the project such as hash funtions.
+            </p>
+            <p>
+                Useful resources outside of src is the ops directory, this folder holds scripts to run create the kubernetes cluster on the test network (createCluster.sh) and the script to compile and
+                run the src code (k8sBuildNet.sh).
+            </p>
+        </section>
+    </article>
+</body>
