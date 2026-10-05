@@ -205,7 +205,6 @@ class Node{
                 conn->pending[reqID] = std::move(resPromise);
             }
             {
-                std::lock_guard<std::mutex> lock(conn->sendMutex);
                 if(conn->sendMsg(req) < 0){
                     std::lock_guard<std::mutex> lock(conn->pendingMutex);
                     conn->pending.erase(reqID);
