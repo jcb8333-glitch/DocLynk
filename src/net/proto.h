@@ -40,6 +40,8 @@ struct nInf{
     }
 };
 
+constexpr uint32_t kMaxPacket = 1 << 20;
+
 // Packet inserted into the payload of a TCP segment.
 // Contains message type for correct handling, an ID to connect a response packet to a request,
 // the chord ID of the destination node, and a payload containing needed node data
@@ -55,6 +57,16 @@ struct Packet {
     }
 };
 
+inline int sendAll(int fd, const char* p, size_t n){
+    while(n){
+        ssize_t w = send(fd, p, n, MSG_NOSIGNAL);
+        if (w < 0 && errno == EINTR) continue;
+        if (w <= 0) return -1;
+        p += w; n -= w;
+    }
+    return 0;
+}
+
 // Serializes a packet and its contents into binary to be sent over a socket.
 inline int sendPacket(int sockfd, Packet& packet){
     std::stringstream ss;
@@ -64,8 +76,8 @@ inline int sendPacket(int sockfd, Packet& packet){
     }
     std::string payload = ss.str();
     uint32_t len = htonl(static_cast<uint32_t>(payload.size()));
-    if (send(sockfd, &len, sizeof(len), 0) != sizeof(len)) return -1;
-    if (send(sockfd, payload.data(), payload.size(), 0) != (ssize_t)payload.size()) return -2;
+    if (sendAll(sockfd, reinterpret_cast<const char*>(&len), sizeof(len)) != sizeof(len)) return -1;
+    if (sendAll(sockfd, payload.data(), payload.size()) != (ssize_t)payload.size()) return -2;
     return 0;
 }
 
@@ -74,6 +86,7 @@ inline int recvPacket(int sockfd, Packet& packet){
     uint32_t len;
     if(recv(sockfd, &len, sizeof(len), MSG_WAITALL) != sizeof(len)) return -1;
     len = ntohl(len);
+    if(len == 0 || len > kMaxPacket) return -3;
     std::string payload(len, '\0');
     if (recv(sockfd, payload.data(), len, MSG_WAITALL) != (ssize_t)len) return -2;
     std::stringstream ss(payload);

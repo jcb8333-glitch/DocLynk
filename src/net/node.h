@@ -44,11 +44,28 @@ class PeerConn {
 
         PeerConn(int fd, std::string addr) : sockfd(fd), peerAddr(std::move(addr)){}
 
+        void shutdownSocket() {
+            alive=false;
+            ::shutdown(sockfd, SHUT_RDWR);
+        }
+
+        int sendMsg(Packet& pkt){
+            std::lock_guard<std::mutex> lock(sendMutex);
+            if (!alive) return -1;
+            if (sendPacket(sockfd, pkt) < 0){
+                shutdownSocket();
+                return -2;
+            }
+            return 0;
+        }
+
         ~PeerConn(){
-            alive = false;
-            shutdown(sockfd, SHUT_RDWR);
+            shutdownSocket();
+            if(reader.joinable()){
+                if(reader.get_id() == std::this_thread::get_id()) reader.detach();
+                else reader.join();
+            }
             close(sockfd);
-            if (reader.joinable()) reader.join();
         }
 };
 
@@ -188,9 +205,8 @@ class Node{
                 conn->pending[reqID] = std::move(resPromise);
             }
             {
-                std::lock_guard<std::mutex> lock(conn->sendMutex);
-                if(sendPacket(conn->sockfd, req) < 0){
-                    std::lock_guard<std::mutex> lock2(conn->pendingMutex);
+                if(conn->sendMsg(req) < 0){
+                    std::lock_guard<std::mutex> lock(conn->pendingMutex);
                     conn->pending.erase(reqID);
                     return std::nullopt;
                 }
@@ -235,7 +251,7 @@ class Node{
                 switch (packet.type){
                     case MsgType::Ping:{
                         Packet res{MsgType::Pong, packet.packetID, packet.chordID, nodeInfo};
-                        sendPacket(conn->sockfd, res);
+                        conn->sendMsg(res);
                         break;
                     }
                     default:{
@@ -250,7 +266,7 @@ class Node{
                         conn->pending.erase(it);
                     }
                 } else {
-                    handleConnection(conn->sockfd, packet);
+                    handleConnection(conn, packet);
                 }
 
             }
@@ -295,8 +311,7 @@ class Node{
             auto succConn = getOrConnect(succ.addr);
             if (succConn){
                 Packet req{MsgType::NotifyReq, nextRequestID++, 0, nodeInfo};
-                std::lock_guard<std::mutex> lock(succConn->sendMutex);
-                sendPacket(succConn->sockfd, req);
+                succConn->sendMsg(req);
             }
 
         }
@@ -342,12 +357,12 @@ class Node{
         }
 
         // Filters request packets to perfom proper operation and send back with a response packet
-        virtual void handleConnection(int sockfd, Packet& packet){
+        virtual void handleConnection(std::shared_ptr<PeerConn> conn, Packet& packet){
             switch (packet.type){
                 case MsgType::FindSuccReq: {
                     nInf res = findSuccessor(packet.chordID);
                     Packet resp{MsgType::FindSuccRes, packet.packetID, packet.chordID, res};
-                    sendPacket(sockfd, resp);
+                    conn->sendMsg(resp);
                     break;
                 }
                 case MsgType::GetPredReq: {
@@ -357,7 +372,7 @@ class Node{
                         pred = predecessor_;
                     }
                     Packet resp{MsgType::GetPredRes, packet.packetID, packet.chordID, pred};
-                    sendPacket(sockfd, resp);
+                    conn->sendMsg(resp);
                     break;
                 }
                 case MsgType::NotifyReq:
