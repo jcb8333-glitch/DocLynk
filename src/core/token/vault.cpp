@@ -9,9 +9,9 @@ std::string seedGen(){
     return std::string(res);
 }
 
-Vault::Vault() : Vault([]{
+Vault::Vault() : Vault([domainKey]{
     std::string s = seedGen();
-    DerivedSet d = evalMaster(s);
+    DerivedSet d = evalMaster(s, domainKey);
     return std::make_pair(std::move(d), std::move(s));
 }()){}
 
