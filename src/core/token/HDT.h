@@ -2,6 +2,7 @@
 
 #include <array>
 #include <string>
+#include <cstring>
 #include <cstdint>
 #include <openssl/hmac.h>
 
@@ -34,13 +35,11 @@ DerivedSet deriveChild(const DerivedSet& parent, uint32_t idx){
     return child;
 }
 
-DerivedSet evalMaster(const std::string& seed){
+DerivedSet evalMaster(const std::string& seed, const char* domainKey){
     unsigned char out[64];
     uint32_t outlen = 0;
-    const char* key = ""; // Assign value later
-    HMAC(EVP_sha512(), key, std::strlen(key), 
+    HMAC(EVP_sha512(), domainKey, std::strlen(domainKey), 
         reinterpret_cast<const unsigned char*>(seed.data()), seed.size(), out, &outlen);
-
     DerivedSet master{};
     setDerivedVals(master, out);
     return master;

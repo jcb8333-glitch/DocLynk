@@ -21,7 +21,7 @@ class Vault{
     public:
         const uint64_t addr;
 
-        Vault()=default;
+        explicit Vault(const char* domainKey);
         
         // On ownership authorized, vault encrypt transaction with public key
         int sign();
