@@ -24,6 +24,7 @@
 #include <ostream>
 
 #include <net/proto.h>
+#include <net/event_loop.h>
 #include <utils/sha.h>
 
 /*
@@ -36,7 +37,7 @@ class PeerConn {
     public:
         int sockfd;
         std::string peerAddr;
-        std::thread reader;
+        std::string rbuf;
         std::atomic<bool> alive{true};
         std::mutex sendMutex;
         std::mutex pendingMutex;
@@ -61,10 +62,6 @@ class PeerConn {
 
         ~PeerConn(){
             shutdownSocket();
-            if(reader.joinable()){
-                if(reader.get_id() == std::this_thread::get_id()) reader.detach();
-                else reader.join();
-            }
             close(sockfd);
         }
 };
@@ -99,6 +96,7 @@ class Node{
         // Destructor: Sets a Node to no longer be running and joins all threads 
         ~Node(){
             running_ = false;
+            loop_.stop();
             joinAll();
         }
 
@@ -147,6 +145,10 @@ class Node{
         std::vector<nInf> successorList_;
         std::array<RouteEntry, 64> routeTable_;
         std::unordered_map<std::string, std::shared_ptr<PeerConn>> connectionPool;
+        NetLoop loop_;
+        int listenFd_ = -1;
+        std::mutex fdMutex_;
+        std::unordered_map<int, std::shared_ptr<PeerConn>> fdConns_;
         // Concurrency objects
         std::promise<void> sReady_;
         std::shared_future<void> sReadyFuture_;
@@ -158,6 +160,13 @@ class Node{
         std::mutex poolMutex;
         std::atomic<bool> running_{true};
         std::atomic<uint64_t> nextRequestID{1};
+
+        void closeConn(std::shared_ptr<PeerConn> conn){
+            loop_.del(conn->sockfd);
+            conn->shutdownSocket();
+            std::lock_guard<std::mutex> lock(fdMutex_);
+            fdConns_.erase(conn->sockfd);
+        }
 
         // Searches range to return the nearest predecessor connected to a node.
         // If the predecessor is not found inside of the range the nearest predecessor
@@ -238,37 +247,23 @@ class Node{
             return res ? res->payload : nInf{};
         }
 
-        // Gets passed into reader thread to read incoming packets while
-        // connection is alive.
-        void readLoop(std::shared_ptr<PeerConn> conn){
-            while (conn->alive){
-                Packet packet;
-                if (recvPacket(conn->sockfd, packet) < 0){
-                    conn->alive = false;
-                    break;
+        // MsgType processing for epoll calls
+        void dispatchPacket(std::shared_ptr<PeerConn> conn, Packet& packet){
+            if (packet.type == MsgType::Ping){
+                Packet res{MsgType::Pong, packet.packetID, packet.chordID, nodeInfo};
+                conn->sendMsg(res);
+            }
+            if (packet.type == MsgType::FindSuccRes || packet.type == MsgType::GetPredRes || packet.type == MsgType::Pong){
+                std::lock_guard<std::mutex> lock(conn->pendingMutex);
+                auto it = conn->pending.find(packet.packetID);
+                if (it != conn->pending.end()){
+                    it->second.set_value(packet);
+                    conn->pending.erase(it);
                 }
-
-                switch (packet.type){
-                    case MsgType::Ping:{
-                        Packet res{MsgType::Pong, packet.packetID, packet.chordID, nodeInfo};
-                        conn->sendMsg(res);
-                        break;
-                    }
-                    default:{
-                        break;
-                    }
-                }
-                if ( packet.type == MsgType::FindSuccRes ||  packet.type == MsgType::GetPredRes ||  packet.type == MsgType::Pong){
-                    std::lock_guard<std::mutex> lock(conn->pendingMutex);
-                    auto it = conn->pending.find(packet.packetID);
-                    if(it != conn->pending.end()){
-                        it->second.set_value(packet);
-                        conn->pending.erase(it);
-                    }
-                } else {
+            } else {
+                std::thread([this, conn, packet]() mutable {
                     handleConnection(conn, packet);
-                }
-
+                }).detach();
             }
         }
 
@@ -407,11 +402,62 @@ class Node{
             }
 
             auto conn = std::make_shared<PeerConn>(sockfd, peerAddr);
-            conn->reader = std::thread(&Node::readLoop, this, conn);
+            if(registerConn(conn) < 0) return nullptr;
 
             std::lock_guard<std::mutex> lock(poolMutex);
             connectionPool[peerAddr] = conn;
             return conn;
+        }
+
+        void onRead(std::shared_ptr<PeerConn> conn){
+            for (;;){
+                Packet packet;
+                int rec = recvFrame(conn->sockfd, conn->rbuf, packet);
+                if(rec == 1)return;
+                if (rec < 0){closeConn(conn); return;}
+                dispatchPacket(conn, packet);
+            }
+        }
+
+        void onConnect(int fd, uint32_t events){
+            std::shared_ptr<PeerConn> conn;
+            {
+                std::lock_guard<std::mutex> lock(fdMutex_);
+                auto it = fdConns_.find(fd);
+                if (it == fdConns_.end()) return;
+                conn = it->second;
+            }
+            if (events & (EPOLLIN | EPOLLRDHUP | EPOLLHUP)) onRead(conn);
+            else if (events & EPOLLERR) closeConn(conn);
+        }
+
+        void onAccept(){
+            for(;;){
+                int connfd = accept4(listenFd_, nullptr, nullptr, SOCK_CLOEXEC);
+                if (connfd < 0){
+                    if (errno == EINTR) continue;
+                    if (errno == EAGAIN || errno == EWOULDBLOCK) return;
+                    perror("Connection refused on server socket");
+                    return;
+                }
+                auto conn = std::make_shared<PeerConn>(connfd, "N/A");
+                registerConn(conn);
+            }
+        }
+
+        int registerConn(std::shared_ptr<PeerConn> conn){
+            int fd = conn->sockfd;
+            {
+                std::lock_guard<std::mutex> lock(fdMutex_);
+                fdConns_[fd] = conn;
+            }
+            if (loop_.add(fd, EPOLLIN | EPOLLRDHUP, [this](int f, uint32_t ev){onConnect(f, ev);}) < 0){
+                perror("epoll add connection");
+                std::lock_guard<std::mutex> lock(fdMutex_);
+                fdConns_.erase(fd);
+                return -1;
+            }
+            return 0;
         }
 
         // Contains logic for the server thread on a node.
@@ -437,27 +483,24 @@ class Node{
                 sReady_.set_value();
                 return EXIT_FAILURE;
             }
-
             if(listen(sockfd, 16) < 0){
                 perror("Server socket failed to listen");
                 close(sockfd);
                 sReady_.set_value();
                 return EXIT_FAILURE;
             }
+            if (loop_.init() < 0 || loop_.add(listenFd_, EPOLLIN, [this](int, uint32_t){onAccept();}) < 0){
+                perror("Failed to start reading loop");
+                close(listenFd_);
+                sReady_.set_value();
+                return EXIT_FAILURE;
+            }
 
             sReady_.set_value();
+            int rec = loop_.run();
+            close(listenFd_);
+            return rec < 0 ? EXIT_FAILURE : EXIT_SUCCESS;
 
-            while (true){
-                int connfd = accept(sockfd, NULL, NULL);
-                if (connfd == -1){
-                    perror("Connection refused on server socket");
-                    continue;
-                }
-
-                auto conn = std::make_shared<PeerConn>(connfd, "N/A");
-                conn->reader = std::thread(&Node::readLoop, this, conn);
-                conn->reader.detach();
-            }
         }
 
         // Contains logic for the client thread on a node.
