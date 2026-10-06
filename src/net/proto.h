@@ -94,3 +94,37 @@ inline int recvPacket(int sockfd, Packet& packet){
     archive(packet);
     return 0;
 }
+
+// Variant of recvPacket
+// Puts available bytes into a buffer, then attempts to parse the packet
+inline int recvFrame(int sockfd, std::string& rbuf, Packet& packet){
+    char temp[4096];
+    for(;;){
+        uint32_t len;
+        std::memcpy(&len, rbuf.data(), sizeof(len));
+        len == ntohl(len);
+        if(len == 0 || len > kMaxPacket) return -3;
+
+        if (rbuf.size() >= sizeof(len) + len){
+            std::stringstream ss(rbuf.substr(sizeof(len), len));
+            rbuf.erase(0, sizeof(len) + len);
+            try {
+                cereal::BinaryInputArchive archive(ss);
+                archive(packet);
+            } catch (...){
+                return -4
+            }
+            return 0;
+        }
+    }
+
+    ssize_t n = recv(sockfd, tmp, sizeof(tmp), MSG_DONTWAIT);
+    if (n > 0){
+        rbuf.append(tmp, static_cast<size_t>(n));
+        continue;
+    }
+    if (n == 0) return -1;
+    if (errno == EINTR) continue;
+    if (errno == EAGIN || errno == EWOULDBLOCK) return 1;
+    return -2;
+}
