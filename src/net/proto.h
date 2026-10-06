@@ -112,19 +112,19 @@ inline int recvFrame(int sockfd, std::string& rbuf, Packet& packet){
                 cereal::BinaryInputArchive archive(ss);
                 archive(packet);
             } catch (...){
-                return -4
+                return -4;
             }
             return 0;
         }
-    }
 
-    ssize_t n = recv(sockfd, tmp, sizeof(tmp), MSG_DONTWAIT);
-    if (n > 0){
-        rbuf.append(tmp, static_cast<size_t>(n));
-        continue;
+        ssize_t n = recv(sockfd, tmp, sizeof(tmp), MSG_DONTWAIT);
+        if (n > 0){
+            rbuf.append(tmp, static_cast<size_t>(n));
+            continue;
+        }
+        if (n == 0) return -1;
+        if (errno == EINTR) continue;
+        if (errno == EAGAIN || errno == EWOULDBLOCK) return 1;
+        return -2;
     }
-    if (n == 0) return -1;
-    if (errno == EINTR) continue;
-    if (errno == EAGIN || errno == EWOULDBLOCK) return 1;
-    return -2;
 }
