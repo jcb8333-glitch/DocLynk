@@ -98,11 +98,11 @@ inline int recvPacket(int sockfd, Packet& packet){
 // Variant of recvPacket
 // Puts available bytes into a buffer, then attempts to parse the packet
 inline int recvFrame(int sockfd, std::string& rbuf, Packet& packet){
-    char temp[4096];
+    char tmp[4096];
     for(;;){
         uint32_t len;
         std::memcpy(&len, rbuf.data(), sizeof(len));
-        len == ntohl(len);
+        len = ntohl(len);
         if(len == 0 || len > kMaxPacket) return -3;
 
         if (rbuf.size() >= sizeof(len) + len){
